@@ -16,8 +16,9 @@ nav a:hover,nav a[aria-current]{border-color:var(--red)}
 /* hero */
 .hero{position:relative;text-align:center;padding:4rem 6vw 9rem;background:radial-gradient(70% 60% at 50% 0,#e9f0fd,#fff);background-size:cover;background-position:center;overflow:hidden}
 .hero-inner{position:relative;z-index:1}
-.plate{display:inline-block;background:#fff;border-radius:22px;padding:.8rem 1.6rem;box-shadow:0 10px 40px #0002;margin-bottom:1.8rem}
-.plate img{width:min(380px,70vw);display:block}
+.plate{display:inline-block;margin-bottom:1.4rem}
+.plate img{width:min(460px,78vw);display:block}
+.has-photo .plate img{filter:drop-shadow(0 3px 14px rgba(0,0,0,.55))}
 .hero h1{font-size:clamp(2rem,5vw,3.6rem);max-width:20ch;margin:0 auto .5em}
 .lede{max-width:36rem;margin:0 auto 2rem;font-size:1.2rem}
 .hero.has-photo{color:#fff}.hero.has-photo h1{text-shadow:0 2px 18px #0008}

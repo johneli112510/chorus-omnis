@@ -57,7 +57,7 @@
       const next = upcoming[0];
       const photos = gallery.filter(m => m.kind !== 'video').slice(0, 6);
       return `<section class="hero ${safe(h.image) ? 'has-photo' : ''}">
-        <div class="hero-inner"><div class="plate"><img src="/assets/logo.png" alt="Chorus Omnis"></div>
+        <div class="hero-inner"><div class="plate"><img src="${safe(h.image) ? '/assets/logo-white.png' : '/assets/logo-transparent.png'}" alt="Chorus Omnis"></div>
         <h1>${esc(h.tagline)}</h1><p class="lede">${esc(h.lede)}</p>
         <a class="btn" href="/concerts.html">${esc(g(h, 'buttonText', 'See our concerts'))}</a></div>${ribbon}</section>
         ${q.text ? `<section class="band"><div class="narrow"><p class="quote">&ldquo;${esc(q.text)}&rdquo;</p><p class="cite">${esc(q.cite)}</p></div></section>` : ''}
