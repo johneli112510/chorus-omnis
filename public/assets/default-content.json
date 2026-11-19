@@ -1,0 +1,84 @@
+{
+  "hero": {
+    "image": "",
+    "tagline": "A choir for everyone, singing together.",
+    "lede": "Chorus Omnis brings voices together to share choral music with our community.",
+    "buttonText": "See our concerts"
+  },
+  "quote": {
+    "text": "Replace this with a short quote from your founder or conductor about why your choir sings.",
+    "cite": "Name, Conductor, Chorus Omnis"
+  },
+  "about": {
+    "image": "",
+    "paragraphs": [
+      "Chorus Omnis is a community choir. Replace this paragraph with how the choir started, who founded it, and the year it was formed.",
+      "Describe the music you sing and where you usually perform."
+    ]
+  },
+  "org": [
+    {
+      "name": "Name",
+      "role": "Conductor",
+      "photo": ""
+    },
+    {
+      "name": "Name",
+      "role": "Accompanist",
+      "photo": ""
+    },
+    {
+      "name": "Name",
+      "role": "President",
+      "photo": ""
+    }
+  ],
+  "vmo": {
+    "vision": "Add the choir's vision statement.",
+    "mission": "Add the choir's mission statement.",
+    "objectives": [
+      "Add your first objective.",
+      "Add your second objective."
+    ]
+  },
+  "concerts": [
+    {
+      "title": "Concert title",
+      "date": "2027-01-15",
+      "time": "7:00 PM",
+      "venue": "Venue, city",
+      "image": "",
+      "link": ""
+    }
+  ],
+  "recordings": [
+    {
+      "title": "Album or single title",
+      "year": "2026",
+      "link": "",
+      "cover": ""
+    }
+  ],
+  "gallery": [],
+  "contact": {
+    "email": "info@your-domain.com",
+    "phone": "",
+    "address": ""
+  },
+  "social": {
+    "facebook": "",
+    "instagram": "",
+    "youtube": "",
+    "spotify": "",
+    "tiktok": ""
+  },
+  "news": [
+    {
+      "id": "welcome",
+      "title": "Welcome to the new Chorus Omnis website",
+      "date": "2026-11-19",
+      "image": "",
+      "body": "We are happy to share our new home on the web. Here you will find our latest news, concert dates, photos and videos.\n\nCheck back often, and follow us on social media to stay in touch."
+    }
+  ]
+}

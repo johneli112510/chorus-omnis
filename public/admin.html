@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Admin | Chorus Omnis</title>
+<link rel="icon" href="/assets/favicon.png">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@600&family=Figtree:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/assets/admin.css">
+</head><body>
+<section id="login" class="login" hidden>
+  <form id="loginForm"><img src="/assets/logo.png" alt="Chorus Omnis">
+    <h1>Admin sign in</h1>
+    <label>Password<input type="password" id="pw" autocomplete="current-password" required></label>
+    <button class="btn" type="submit">Sign in</button>
+    <p class="err" id="loginErr" role="alert"></p></form>
+</section>
+
+<div id="app" hidden>
+  <header class="bar"><img src="/assets/logo.png" alt="Chorus Omnis"><strong>Site admin</strong>
+    <span class="grow"></span><span id="status" class="status" role="status"></span>
+    <a class="btn ghost" href="/index.html" target="_blank" rel="noopener">View site</a>
+    <button class="btn" id="save" disabled>Save changes</button>
+    <button class="btn ghost" id="logout">Sign out</button></header>
+  <div class="layout"><nav id="tabs" aria-label="Sections"></nav><main id="panel"></main></div>
+</div>
+
+<dialog id="picker"><div class="pk-head"><h2 id="pkTitle">Choose a photo</h2><button class="btn ghost" id="pkClose">Close</button></div>
+  <div class="pk-body"><label class="btn up-btn">Upload new photo<input type="file" id="pkFile" accept="image/jpeg,image/png,image/webp,image/gif" hidden></label>
+  <div id="pkGrid" class="mgrid"></div></div></dialog>
+<script src="/assets/admin.js"></script></body></html>
