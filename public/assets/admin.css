@@ -46,3 +46,10 @@ dialog{border:0;border-radius:14px;padding:0;width:min(60rem,94vw);max-height:90
 @media(max-width:800px){.layout{grid-template-columns:1fr;padding:.8rem}#tabs{flex-direction:row;overflow:auto;position:static}.row2{grid-template-columns:1fr}}
 
 .login-msg{background:#fff;padding:2rem;border-radius:16px;width:min(34rem,100%);box-shadow:0 12px 40px #0002}.login-msg code{background:var(--mist);padding:.1rem .3rem;border-radius:4px}
+
+.pk-head{gap:.6rem}.pk-head .grow{flex:1}
+.mcard.pick.sel{outline:4px solid var(--blue)}.mcard.pick.sel::after{content:"\2713";position:absolute;top:.4rem;right:.4rem;background:var(--blue);color:#fff;width:1.6rem;height:1.6rem;border-radius:50%;display:grid;place-items:center;font-weight:700}
+.mcard.pick{position:relative}
+details.post>summary{cursor:pointer;display:flex;gap:.8rem;align-items:center;list-style:none}.muted{color:#777;font-size:.9rem}
+details.post>summary::before{content:"\25B8"}details.post[open]>summary::before{content:"\25BE"}
+.card.block{background:#fff}

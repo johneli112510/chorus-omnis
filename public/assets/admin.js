@@ -4,7 +4,7 @@
   const safe = u => { u = String(u || ''); return /^(\/(?!\/)|https?:\/\/)/.test(u) && !/["'()<>\s]/.test(u) ? u : ''; };
   const H = { 'X-Requested-With': 'admin' };
 
-  let C = {}, media = [], tab = 'home', dirty = false, mediaLoaded = false, pickResolve = null, setup = {};
+  let C = {}, openPosts = new Set(), media = [], tab = 'home', dirty = false, mediaLoaded = false, pickResolve = null, setup = {};
 
   async function api(url, opt = {}) {
     const r = await fetch(url, { ...opt, headers: { ...H, ...(opt.headers || {}) }, credentials: 'same-origin' });
@@ -51,6 +51,14 @@
     ['hero', 'quote', 'about', 'vmo', 'contact', 'social'].forEach(k => C[k] ??= {});
     ['org', 'concerts', 'recordings', 'gallery', 'news'].forEach(k => C[k] ??= []);
     C.about.paragraphs ??= []; C.vmo.objectives ??= [];
+    C.news.forEach(p => {
+      p.id ||= Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+      if (!Array.isArray(p.blocks)) {
+        p.blocks = String(p.body || '').split(/\n{2,}/).filter(x => x.trim()).map(text => ({ type: 'text', text }));
+        delete p.body;
+      }
+      p.summary ??= ''; p.imageCaption ??= '';
+    });
     $('#login').hidden = true; $('#app').hidden = false;
     dirty = false; $('#save').disabled = true; status('');
     renderTabs(); renderPanel();
@@ -86,19 +94,40 @@
     <button type="button" class="btn danger sm" data-act="del" data-l="${list}" data-i="${i}">Delete</button></div></div>`;
   const addBtn = (list, label) => `<button type="button" class="btn ghost" data-act="add" data-l="${list}">${label}</button>`;
   const NEW = {
-    news: () => ({ id: Date.now().toString(36), title: '', date: new Date().toISOString().slice(0, 10), image: '', body: '' }),
+    news: () => ({ id: Date.now().toString(36) + Math.random().toString(36).slice(2, 5), title: '', date: new Date().toISOString().slice(0, 10), image: '', imageCaption: '', summary: '', blocks: [] }),
     org: { name: '', role: '', photo: '' }, concerts: { title: '', date: '', time: '', venue: '', image: '', link: '' },
     recordings: { title: '', year: '', link: '', cover: '' }, 'about.paragraphs': '', 'vmo.objectives': '',
   };
+
+  const blockCard = (i, j, b) => {
+    const base = `news.${i}.blocks.${j}`, l = `news.${i}.blocks`;
+    let body;
+    if (b.type === 'image') {
+      const u = safe(b.url);
+      body = `<div class="imgf"><div class="thumb">${u ? `<img src="${esc(u)}" alt="">` : 'No photo'}</div><div style="flex:1">${text('Caption (optional)', base + '.caption')}</div></div>`;
+    } else if (b.type === 'heading') body = text('Heading', base + '.text');
+    else body = text('Text', base + '.text', { area: 1, rows: 5 });
+    return `<div class="card block">${cardHead(l, j, b.type === 'image' ? 'Photo' : b.type === 'heading' ? 'Heading' : 'Paragraph')}${body}</div>`;
+  };
+  const postCard = (p, i) => `<details class="card post" data-pid="${esc(p.id)}" ${openPosts.has(p.id) ? 'open' : ''}>
+    <summary><strong>${esc(p.title || 'New story')}</strong> <span class="muted">${esc(p.date || '')}</span></summary>
+    <div class="fields" style="margin-top:1rem">${cardHead('news', i, 'Story options')}
+      ${text('Title', `news.${i}.title`)}${text('Date', `news.${i}.date`, { type: 'date' })}
+      ${text('Short summary (shown on cards and when shared)', `news.${i}.summary`, { area: 1, rows: 2 })}
+      ${imgField('Cover photo', `news.${i}.image`)}${text('Cover photo caption (optional)', `news.${i}.imageCaption`)}
+      <div><strong>Story</strong>${p.blocks.map((b, j) => blockCard(i, j, b)).join('')}
+      <div class="btns"><button type="button" class="btn ghost" data-act="addblock" data-t="text" data-l="news.${i}.blocks">+ Paragraph</button>
+      <button type="button" class="btn ghost" data-act="addblock" data-t="heading" data-l="news.${i}.blocks">+ Heading</button>
+      <button type="button" class="btn ghost" data-act="addphotos" data-l="news.${i}.blocks">+ Photos</button></div></div>
+      ${p.id ? `<p class="note">Page address: /news/${esc(p.id)}</p>` : ''}</div></details>`;
 
   // ---------- panels
   const PANELS = {
     home: () => `<h2>Home page</h2><p class="note">The big photo behind the logo is optional. Without it the home page shows the logo and ribbon.</p><div class="fields">
       ${imgField('Hero background photo', 'hero.image')}${text('Headline', 'hero.tagline')}${text('Short intro', 'hero.lede', { area: 1, rows: 3 })}
       ${text('Button text', 'hero.buttonText')}${text('Quote', 'quote.text', { area: 1, rows: 3 })}${text('Quote by', 'quote.cite')}</div>`,
-    news: () => `<h2>Latest News</h2><p class="note">Posts show on the home page (newest three, by date) and on the News page. Separate paragraphs with a blank line.</p><div class="fields">
-      ${C.news.map((p, i) => `<div class="card">${cardHead('news', i, p.title || 'New post')}${text('Title', `news.${i}.title`)}${text('Date', `news.${i}.date`, { type: 'date' })}
-      ${imgField('Photo (optional)', `news.${i}.image`)}${text('Post', `news.${i}.body`, { area: 1, rows: 8 })}</div>`).join('')}${addBtn('news', 'Add post')}</div>`,
+    news: () => `<h2>News stories</h2><p class="note">Each story has its own page. Build it like an article: add paragraphs, headings and photos (with captions) in any order. Photos added one after another show side by side. In text you can use *italic* and **bold**. The newest three stories appear on the home page.</p>
+      <div class="fields">${C.news.map((p, i) => postCard(p, i)).join('')}${addBtn('news', 'Add story')}</div>`,
     about: () => `<h2>The Choir</h2><div class="fields">${imgField('Photo', 'about.image')}
       <div>${(C.about.paragraphs).map((p, i) => `<div class="card">${cardHead('about.paragraphs', i, 'Paragraph ' + (i + 1))}${text('Text', 'about.paragraphs.' + i, { area: 1, rows: 5 })}</div>`).join('')}
       ${addBtn('about.paragraphs', 'Add paragraph')}</div></div>`,
@@ -133,6 +162,7 @@
   }
 
   // ---------- panel events
+  $('#panel').addEventListener('toggle', e => { const d = e.target; if (d.dataset && d.dataset.pid) { if (d.open) openPosts.add(d.dataset.pid); else openPosts.delete(d.dataset.pid); } }, true);
   $('#panel').addEventListener('input', e => { const p = e.target.dataset.p; if (p) set(p, e.target.value); });
   $('#panel').addEventListener('click', async e => {
     const b = e.target.closest('[data-act]'); if (!b) return;
@@ -142,8 +172,14 @@
       if (act === 'clear') set(p, ''); else { const m = await pickImage(); if (!m) return; set(p, m.url); }
       return renderPanel();
     }
+    if (act === 'addblock' || act === 'addphotos') {
+      const arr = get(b.dataset.l);
+      if (act === 'addblock') arr.push({ type: b.dataset.t === 'heading' ? 'heading' : 'text', text: '' });
+      else { const picks = await pickImage(true); if (!picks.length) return; picks.forEach(m => arr.push({ type: 'image', url: m.url, caption: '' })); }
+      markDirty(); return renderPanel();
+    }
     const l = b.dataset.l, i = +b.dataset.i, arr = get(l);
-    if (act === 'add') { const n = typeof NEW[l] === 'function' ? NEW[l]() : typeof NEW[l] === 'object' ? { ...NEW[l] } : NEW[l]; if (l === 'news') arr.unshift(n); else arr.push(n); markDirty(); return renderPanel(); }
+    if (act === 'add') { const n = typeof NEW[l] === 'function' ? NEW[l]() : typeof NEW[l] === 'object' ? { ...NEW[l] } : NEW[l]; if (l === 'news') { arr.unshift(n); openPosts.add(n.id); } else arr.push(n); markDirty(); return renderPanel(); }
     if (act === 'del') { if (!confirm('Delete this item?')) return; arr.splice(i, 1); }
     if (act === 'up' && i > 0) [arr[i - 1], arr[i]] = [arr[i], arr[i - 1]];
     if (act === 'down' && i < arr.length - 1) [arr[i + 1], arr[i]] = [arr[i], arr[i + 1]];
@@ -223,25 +259,37 @@
     drop.addEventListener('drop', e => go(e.dataTransfer.files));
   }
 
-  // ---------- image picker
-  function pickImage() {
+  // ---------- image picker (single or multiple)
+  function pickImage(multi = false) {
     return new Promise(async resolve => {
-      const dlg = $('#picker'), grid = $('#pkGrid');
-      pickResolve = resolve;
+      const dlg = $('#picker'), grid = $('#pkGrid'), done = $('#pkDone');
+      const sel = new Set(); let finished = false;
+      const finish = v => { if (finished) return; finished = true; resolve(v); };
+      $('#pkTitle').textContent = multi ? 'Choose photos (tap to select several)' : 'Choose a photo';
+      done.hidden = !multi;
       if (!mediaLoaded) { const r = await api('/api/media'); if (r.ok) { media = (await r.json()).items; mediaLoaded = true; } }
+      const upd = () => { done.textContent = `Add selected (${sel.size})`; done.disabled = !sel.size; };
       const draw = () => {
         const imgs = media.filter(m => m.kind === 'image');
-        grid.innerHTML = imgs.length ? imgs.map(m => `<button class="mcard pick" data-url="${esc(m.url)}"><img class="pv" src="${esc(m.url)}" alt="${esc(m.name)}"><div class="mi"><div class="nm">${esc(m.name)}</div></div></button>`).join('') : '<p>No photos yet. Upload one above.</p>';
+        grid.innerHTML = imgs.length ? imgs.map(m => `<button class="mcard pick ${sel.has(m.url) ? 'sel' : ''}" data-url="${esc(m.url)}"><img class="pv" src="${esc(m.url)}" alt="${esc(m.name)}"><div class="mi"><div class="nm">${esc(m.name)}</div></div></button>`).join('') : '<p>No photos yet. Upload some above.</p>';
       };
-      draw(); dlg.showModal();
-      grid.onclick = e => { const b = e.target.closest('[data-url]'); if (!b) return; dlg.close(); resolve({ url: b.dataset.url }); pickResolve = null; };
+      draw(); upd(); dlg.showModal();
+      grid.onclick = e => {
+        const b = e.target.closest('[data-url]'); if (!b) return;
+        const u = b.dataset.url;
+        if (!multi) { dlg.close(); finish({ url: u }); return; }
+        if (sel.has(u)) sel.delete(u); else sel.add(u);
+        b.classList.toggle('sel'); upd();
+      };
+      done.onclick = () => { dlg.close(); finish([...sel].map(url => ({ url }))); };
       $('#pkClose').onclick = () => dlg.close();
-      dlg.onclose = () => { if (pickResolve) { pickResolve(null); pickResolve = null; } };
+      dlg.onclose = () => finish(multi ? [] : null);
       $('#pkFile').onchange = async ev => {
-        const f = ev.target.files[0]; ev.target.value = ''; if (!f) return;
+        const files = [...ev.target.files]; ev.target.value = ''; if (!files.length) return;
         const tmp = document.createElement('div');
-        const r = await uploadFiles([f], tmp); if (!r.length) return alert(tmp.textContent || 'Upload failed');
-        await loadMedia(); draw();
+        const r = await uploadFiles(files, tmp); if (!r.length) return alert(tmp.textContent || 'Upload failed');
+        await loadMedia(); if (multi) r.forEach(x => sel.add(x.url));
+        draw(); upd();
       };
     });
   }

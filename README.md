@@ -23,6 +23,11 @@ Open `https://YOUR-SITE/admin.html`, sign in, edit, press **Save changes**.
 Photos and videos: **Photos and Videos** tab. Tick **In gallery** to show a file on the Gallery page.
 Photo fields (hero, people, concerts, covers) have a **Choose photo** button.
 
+## News stories
+Admin -> **News stories** -> Add story. Each story gets its own page at `/news/<id>`.
+Build it from paragraphs, headings and photos with captions; photos added one after another show side by side.
+In text, `*italic*` and `**bold**` work. Shared links (WhatsApp, Facebook) show the cover photo, title and summary.
+
 ## Limits
 - Uploads up to 95 MB each (Cloudflare request limit is 100 MB on Free and Pro). For long videos, upload to YouTube and add the link under Social.
 - One shared admin password. Use a long one and keep it private.

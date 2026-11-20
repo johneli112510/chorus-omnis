@@ -78,7 +78,22 @@
       "title": "Welcome to the new Chorus Omnis website",
       "date": "2026-11-19",
       "image": "",
-      "body": "We are happy to share our new home on the web. Here you will find our latest news, concert dates, photos and videos.\n\nCheck back often, and follow us on social media to stay in touch."
+      "imageCaption": "",
+      "summary": "We are happy to share our new home on the web.",
+      "blocks": [
+        {
+          "type": "text",
+          "text": "We are happy to share our new home on the web. Here you will find our latest news, concert dates, photos and videos."
+        },
+        {
+          "type": "heading",
+          "text": "What to expect"
+        },
+        {
+          "type": "text",
+          "text": "Stories from our concerts with *photos and captions*, updates from rehearsals, and announcements."
+        }
+      ]
     }
   ]
 }

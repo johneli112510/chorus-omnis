@@ -2,6 +2,8 @@
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const safe = u => { u = String(u || '').trim(); return /^(\/(?!\/)|https?:\/\/)/.test(u) && !/["'()<>\s]/.test(u) ? u : ''; };
   const $ = (s, r = document) => r.querySelector(s);
+  // light formatting: **bold**, *italic*, line breaks (everything is escaped first)
+  const fmt = s => esc(s).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/\*(.+?)\*/g, '<em>$1</em>').replace(/\n/g, '<br>');
 
   // Menu
   const btn = $('.menu-btn'), nav = $('#nav');
@@ -20,28 +22,36 @@
 
   const img = (u, alt = '', cls = '') => safe(u) ? `<img class="${cls}" src="${esc(safe(u))}" alt="${esc(alt)}" loading="lazy">` : '';
   const pageHead = (t, sub) => `<section class="pagehead">${ribbon}<h1>${esc(t)}</h1>${sub ? `<p>${esc(sub)}</p>` : ''}</section>`;
-  const fmtDate = d => { const x = new Date(d + 'T00:00:00'); return isNaN(x) ? esc(d) : x.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }); };
+  const fmtDate = d => { const x = new Date(d + 'T00:00:00'); return isNaN(x) ? esc(d) : x.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }); };
   const today = new Date().toISOString().slice(0, 10);
   const concerts = [...(C.concerts || [])].sort((a, b) => String(a.date).localeCompare(String(b.date)));
   const upcoming = concerts.filter(c => !c.date || c.date >= today);
   const past = concerts.filter(c => c.date && c.date < today).reverse();
   const gallery = C.gallery || [];
+
+  // ----- news
   const posts = [...(C.news || [])].sort((a, b) => String(b.date).localeCompare(String(a.date)));
   const pid = p => String(p.id || '').replace(/[^a-z0-9-]/gi, '');
-  const excerpt = (t, n = 170) => { t = String(t || '').replace(/\s+/g, ' ').trim(); return t.length > n ? t.slice(0, n).replace(/\s+\S*$/, '') + '\u2026' : t; };
+  const blocksOf = p => Array.isArray(p.blocks) ? p.blocks
+    : String(p.body || '').split(/\n{2,}/).filter(x => x.trim()).map(text => ({ type: 'text', text }));
+  const plain = s => String(s || '').replace(/\*+/g, '').replace(/\s+/g, ' ').trim();
+  const excerpt = (p, n = 170) => {
+    const t = plain(p.summary || (blocksOf(p).find(b => b.type === 'text') || {}).text);
+    return t.length > n ? t.slice(0, n).replace(/\s+\S*$/, '') + '\u2026' : t;
+  };
+  const cover = p => p.image || (blocksOf(p).find(b => b.type === 'image' && safe(b.url)) || {}).url || '';
   const postCard = p => `<article class="post-card">
-    ${safe(p.image) ? `<a href="/news.html#${pid(p)}">${img(p.image, p.title, 'post-img')}</a>` : ''}
+    ${safe(cover(p)) ? `<a href="/news/${pid(p)}">${img(cover(p), p.title, 'post-img')}</a>` : ''}
     <div class="post-meta">${p.date ? fmtDate(p.date) : ''}</div>
-    <h3><a href="/news.html#${pid(p)}">${esc(p.title)}</a></h3><p>${esc(excerpt(p.body))}</p>
-    <a class="readmore" href="/news.html#${pid(p)}">Read more</a></article>`;
-  const postFull = p => `<article class="post" id="${pid(p)}">
-    <div class="post-meta">${p.date ? fmtDate(p.date) : ''}</div><h2>${esc(p.title)}</h2>
-    ${safe(p.image) ? img(p.image, p.title, 'post-hero') : ''}
-    ${String(p.body || '').split(/\n{2,}/).filter(x => x.trim()).map(x => `<p>${esc(x).replace(/\n/g, '<br>')}</p>`).join('')}</article>`;
+    <h3><a href="/news/${pid(p)}">${esc(p.title)}</a></h3><p>${esc(excerpt(p))}</p>
+    <a class="readmore" href="/news/${pid(p)}">Read more</a></article>`;
+
+  // ----- lightbox items for the current page
+  let lbItems = [];
 
   const media = (m, i) => m.kind === 'video'
     ? `<figure class="gitem video"><video controls preload="metadata" playsinline src="${esc(safe(m.url))}"></video>${m.caption ? `<figcaption>${esc(m.caption)}</figcaption>` : ''}</figure>`
-    : `<figure class="gitem"><button data-lb="${i}" aria-label="Open photo${m.caption ? ': ' + esc(m.caption) : ''}"><img src="${esc(safe(m.url))}" alt="${esc(m.caption)}" loading="lazy"></button>${m.caption ? `<figcaption>${esc(m.caption)}</figcaption>` : ''}</figure>`;
+    : `<figure class="gitem"><button data-lb="g${i}" aria-label="Open photo${m.caption ? ': ' + esc(m.caption) : ''}"><img src="${esc(safe(m.url))}" alt="${esc(m.caption)}" loading="lazy"></button>${m.caption ? `<figcaption>${esc(m.caption)}</figcaption>` : ''}</figure>`;
 
   const event = c => `<article class="event">
     ${safe(c.image) ? img(c.image, c.title, 'event-img') : '<div class="event-img ph" aria-hidden="true"></div>'}
@@ -51,11 +61,35 @@
 
   const initials = n => String(n || '?').split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
 
+  function articleHtml(p) {
+    const fig = b => {
+      const k = 'p' + lbItems.length;
+      lbItems.push({ k, url: safe(b.url), caption: plain(b.caption) });
+      return `<figure class="fig"><button data-lb="${k}" aria-label="Enlarge photo"><img src="${esc(safe(b.url))}" alt="${esc(plain(b.caption))}" loading="lazy"></button>${b.caption ? `<figcaption>${fmt(b.caption)}</figcaption>` : ''}</figure>`;
+    };
+    let html = safe(p.image) ? fig({ url: p.image, caption: p.imageCaption }) : '';
+    const bl = blocksOf(p);
+    for (let i = 0; i < bl.length;) {
+      const b = bl[i];
+      if (b.type === 'image') {
+        const grp = [];
+        while (i < bl.length && bl[i].type === 'image') { if (safe(bl[i].url)) grp.push(bl[i]); i++; }
+        if (grp.length === 1) html += fig(grp[0]);
+        else if (grp.length > 1) html += `<div class="fig-grid n${Math.min(grp.length, 3)}">${grp.map(fig).join('')}</div>`;
+        continue;
+      }
+      if (String(b.text || '').trim()) html += b.type === 'heading' ? `<h2>${esc(b.text)}</h2>` : `<p>${fmt(b.text)}</p>`;
+      i++;
+    }
+    return html;
+  }
+
   const views = {
     home() {
       const h = C.hero || {}, q = C.quote || {};
       const next = upcoming[0];
       const photos = gallery.filter(m => m.kind !== 'video').slice(0, 6);
+      lbItems = gallery.map((m, i) => ({ k: 'g' + i, url: safe(m.url), caption: m.caption || '', video: m.kind === 'video' }));
       return `<section class="hero ${safe(h.image) ? 'has-photo' : ''}">
         <div class="hero-inner"><div class="plate"><img src="${safe(h.image) ? '/assets/logo-white.png' : '/assets/logo-transparent.png'}" alt="Chorus Omnis"></div>
         <h1>${esc(h.tagline)}</h1><p class="lede">${esc(h.lede)}</p>
@@ -68,6 +102,30 @@
           <a class="tile" href="/about.html"><h2>About the choir</h2><p>Who we are and how we began.</p></a>
           <a class="tile" href="/recordings.html"><h2>Recordings</h2><p>Listen to our performances.</p></a>
           <a class="tile" href="/contact.html"><h2>Join or invite us</h2><p>Audition, book us, or say hello.</p></a></section>`;
+    },
+    news() {
+      return pageHead('News', 'Stories and updates from Chorus Omnis') + `<section class="wrap"><div class="posts">${posts.map(postCard).join('') || '<p>No news yet. Check back soon.</p>'}</div></section>`;
+    },
+    post() {
+      const m = location.pathname.match(/\/news\/([^/?#]+)/);
+      let id = m ? decodeURIComponent(m[1]) : (new URLSearchParams(location.search).get('p') || '');
+      id = id.replace(/[^a-z0-9-]/gi, '');
+      const p = posts.find(x => pid(x) === id);
+      if (!p) return pageHead('Story not found') + '<section class="wrap"><p><a href="/news.html">&larr; Back to News</a></p></section>';
+      document.title = `${p.title} | Chorus Omnis`;
+      const url = location.origin + '/news/' + pid(p);
+      const enc = encodeURIComponent;
+      const more = posts.filter(x => x !== p).slice(0, 4);
+      const body = articleHtml(p);
+      return `<section class="wrap article"><a class="back" href="/news.html">&larr; Back to News</a>
+        <div class="post-meta">${p.date ? fmtDate(p.date) : ''}</div><h1>${esc(p.title)}</h1>
+        <div class="story">${body}</div>
+        <div class="share"><strong>Share this story</strong>
+          <a href="https://wa.me/?text=${enc(p.title + ' \u2014 ' + url)}" target="_blank" rel="noopener">WhatsApp</a>
+          <a href="https://www.facebook.com/sharer/sharer.php?u=${enc(url)}" target="_blank" rel="noopener">Facebook</a>
+          <a href="https://twitter.com/intent/tweet?text=${enc(p.title)}&url=${enc(url)}" target="_blank" rel="noopener">X</a>
+          <a href="mailto:?subject=${enc(p.title)}&body=${enc('Read this story: ' + url)}">Email</a></div>
+        ${more.length ? `<div class="more-posts"><h2>More posts</h2><ul>${more.map(x => `<li><a href="/news/${pid(x)}">${esc(x.title)}</a><span>${x.date ? fmtDate(x.date) : ''}</span></li>`).join('')}</ul></div>` : ''}</section>`;
     },
     about() {
       const a = C.about || {};
@@ -86,15 +144,13 @@
         <h2>Vision</h2><p>${esc(v.vision)}</p><h2>Mission</h2><p>${esc(v.mission)}</p>
         <h2>Objectives</h2><ul>${(v.objectives || []).map(o => `<li>${esc(o)}</li>`).join('')}</ul></section>`;
     },
-    news() {
-      return pageHead('Latest News', 'Updates from Chorus Omnis') + `<section class="wrap feed">${posts.map(postFull).join('') || '<p>No news yet. Check back soon.</p>'}</section>`;
-    },
     concerts() {
       return pageHead('Concerts', 'Upcoming and past performances') + `<section class="wrap">
         <h2 class="sec">Upcoming</h2>${upcoming.map(event).join('') || '<p>No concerts are scheduled right now. Check back soon.</p>'}
         ${past.length ? `<h2 class="sec">Past performances</h2>${past.map(event).join('')}` : ''}</section>`;
     },
     gallery() {
+      lbItems = gallery.map((m, i) => ({ k: 'g' + i, url: safe(m.url), caption: m.caption || '', video: m.kind === 'video' }));
       return pageHead('Gallery', 'Photos and videos from Chorus Omnis') + `<section class="wrap">${gallery.length
         ? `<div class="gallery">${gallery.map(media).join('')}</div>` : '<p>Photos and videos are coming soon.</p>'}</section>`;
     },
@@ -132,16 +188,16 @@
     location.href = `mailto:${to}?subject=${encodeURIComponent('Message from ' + d.get('name'))}&body=${encodeURIComponent(d.get('message') + '\n\n' + d.get('name') + ' (' + d.get('email') + ')')}`;
   });
 
-  // Lightbox
-  const photos = gallery.map((m, i) => ({ ...m, i })).filter(m => m.kind !== 'video');
+  // Lightbox (photos only)
+  const photos = lbItems.filter(m => !m.video && m.url);
   if (photos.length) {
     const dlg = document.createElement('dialog');
     dlg.className = 'lightbox';
     dlg.innerHTML = '<button class="lb-close" aria-label="Close">&times;</button><button class="lb-prev" aria-label="Previous">&#8249;</button><figure><img alt=""><figcaption></figcaption></figure><button class="lb-next" aria-label="Next">&#8250;</button>';
     document.body.appendChild(dlg);
     let cur = 0;
-    const show = n => { cur = (n + photos.length) % photos.length; const m = photos[cur]; $('img', dlg).src = safe(m.url); $('img', dlg).alt = m.caption || ''; $('figcaption', dlg).textContent = m.caption || ''; };
-    root.addEventListener('click', e => { const b = e.target.closest('[data-lb]'); if (!b) return; show(photos.findIndex(m => m.i === +b.dataset.lb)); dlg.showModal(); });
+    const show = n => { cur = (n + photos.length) % photos.length; const m = photos[cur]; $('img', dlg).src = m.url; $('img', dlg).alt = m.caption; $('figcaption', dlg).textContent = m.caption; };
+    root.addEventListener('click', e => { const b = e.target.closest('[data-lb]'); if (!b) return; const n = photos.findIndex(m => m.k === b.dataset.lb); if (n < 0) return; show(n); dlg.showModal(); });
     $('.lb-close', dlg).onclick = () => dlg.close();
     $('.lb-prev', dlg).onclick = () => show(cur - 1);
     $('.lb-next', dlg).onclick = () => show(cur + 1);

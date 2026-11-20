@@ -24,7 +24,7 @@
   <div class="layout"><nav id="tabs" aria-label="Sections"></nav><main id="panel"></main></div>
 </div>
 
-<dialog id="picker"><div class="pk-head"><h2 id="pkTitle">Choose a photo</h2><button class="btn ghost" id="pkClose">Close</button></div>
-  <div class="pk-body"><label class="btn up-btn">Upload new photo<input type="file" id="pkFile" accept="image/jpeg,image/png,image/webp,image/gif" hidden></label>
+<dialog id="picker"><div class="pk-head"><h2 id="pkTitle">Choose a photo</h2><span class="grow"></span><button class="btn" id="pkDone" hidden>Add selected</button><button class="btn ghost" id="pkClose">Close</button></div>
+  <div class="pk-body"><label class="btn up-btn">Upload new photos<input type="file" id="pkFile" multiple accept="image/jpeg,image/png,image/webp,image/gif" hidden></label>
   <div id="pkGrid" class="mgrid"></div></div></dialog>
 <script src="/assets/admin.js"></script></body></html>

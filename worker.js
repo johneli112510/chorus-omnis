@@ -213,6 +213,36 @@ async function serveMedia(request, env, url) {
   return new Response(obj.body, { status, headers });
 }
 
+// ---------- /news/<id> : story page with share-preview tags
+const escA = s => String(s ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+async function servePost(request, env, url) {
+  const id = decodeURIComponent(url.pathname.slice('/news/'.length)).replace(/\/+$/, '').replace(/[^a-z0-9-]/gi, '');
+  const getPage = async () => {
+    let r = await env.ASSETS.fetch(new Request(new URL('/post', url)));
+    if (r.status >= 300 && r.status < 400 && r.headers.get('location'))
+      r = await env.ASSETS.fetch(new Request(new URL(r.headers.get('location'), url)));
+    return r;
+  };
+  const [page, cr] = await Promise.all([getPage(), contentApi.onRequestGet({ request, env })]);
+  let html = await page.text();
+  let C = {};
+  try { C = await cr.json(); } catch {}
+  const p = (C.news || []).find(x => String(x.id || '').replace(/[^a-z0-9-]/gi, '') === id);
+  if (p) {
+    const blocks = Array.isArray(p.blocks) ? p.blocks : [];
+    const firstText = (blocks.find(b => b.type === 'text') || {}).text || p.body || '';
+    const desc = String(p.summary || firstText).replace(/\*+/g, '').replace(/\s+/g, ' ').trim().slice(0, 200);
+    const imgUrl = p.image || (blocks.find(b => b.type === 'image' && b.url) || {}).url || '/assets/logo.png';
+    const abs = /^(\/(?!\/)|https?:\/\/)/.test(imgUrl) ? new URL(imgUrl, url).href : new URL('/assets/logo.png', url).href;
+    const title = String(p.title || 'News');
+    const tags = `<meta name="description" content="${escA(desc)}"><meta property="og:type" content="article"><meta property="og:title" content="${escA(title)}"><meta property="og:description" content="${escA(desc)}"><meta property="og:image" content="${escA(abs)}"><meta property="og:url" content="${escA(url.origin + '/news/' + id)}"><meta name="twitter:card" content="summary_large_image">`;
+    html = html.replace('<!--META-->', () => tags).replace(/<title>[^<]*<\/title>/, () => `<title>${escA(title)} | Chorus Omnis</title>`);
+  } else {
+    html = html.replace('<!--META-->', () => '<meta name="robots" content="noindex">');
+  }
+  return new Response(html, { status: p ? 200 : 404, headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-cache' } });
+}
+
 // ---------- router
 const ROUTES = {
   '/api/login': loginApi,
@@ -235,6 +265,9 @@ export default {
       } catch (e) {
         return json({ error: 'Server error: ' + (e && e.message ? e.message : 'unknown') }, 500);
       }
+    }
+    if (url.pathname.startsWith('/news/') && url.pathname.length > 6 && (request.method === 'GET' || request.method === 'HEAD')) {
+      return servePost(request, env, url);
     }
     if (url.pathname.startsWith('/media/') && (request.method === 'GET' || request.method === 'HEAD')) {
       return serveMedia(request, env, url);
