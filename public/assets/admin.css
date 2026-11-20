@@ -53,3 +53,14 @@ dialog{border:0;border-radius:14px;padding:0;width:min(60rem,94vw);max-height:90
 details.post>summary{cursor:pointer;display:flex;gap:.8rem;align-items:center;list-style:none}.muted{color:#777;font-size:.9rem}
 details.post>summary::before{content:"\25B8"}details.post[open]>summary::before{content:"\25BE"}
 .card.block{background:#fff}
+
+@media(max-width:800px){
+  .bar{padding:.4rem .7rem;gap:.4rem}.bar img{height:38px}.bar strong{display:none}
+  .bar .btn{padding:.45rem .8rem;font-size:.85rem}.status{font-size:.8rem;width:100%;order:9}
+  #panel{padding:1rem}#tabs button{white-space:nowrap}
+  .imgf{flex-wrap:wrap}.card-head{flex-wrap:wrap}
+  .mgrid{grid-template-columns:repeat(auto-fill,minmax(8.5rem,1fr))}
+  dialog{width:98vw;max-height:94vh}.pk-head{flex-wrap:wrap}
+  .login form{padding:1.4rem}
+}
+.slide-card .thumb{width:120px;height:80px}

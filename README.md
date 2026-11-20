@@ -23,6 +23,10 @@ Open `https://YOUR-SITE/admin.html`, sign in, edit, press **Save changes**.
 Photos and videos: **Photos and Videos** tab. Tick **In gallery** to show a file on the Gallery page.
 Photo fields (hero, people, concerts, covers) have a **Choose photo** button.
 
+## Home page slideshow
+Admin -> **Home** -> Slideshow photos -> **+ Add photos** (pick several at once or upload new ones).
+Photos change every 10 seconds by default (set the seconds and Slide or Fade in the same tab). Visitors can swipe on phones or use the dots and arrows.
+
 ## News stories
 Admin -> **News stories** -> Add story. Each story gets its own page at `/news/<id>`.
 Build it from paragraphs, headings and photos with captions; photos added one after another show side by side.

@@ -51,6 +51,9 @@
     ['hero', 'quote', 'about', 'vmo', 'contact', 'social'].forEach(k => C[k] ??= {});
     ['org', 'concerts', 'recordings', 'gallery', 'news'].forEach(k => C[k] ??= []);
     C.about.paragraphs ??= []; C.vmo.objectives ??= [];
+    C.hero.slides ??= [];
+    if (!C.hero.slides.length && C.hero.image) { C.hero.slides = [{ url: C.hero.image }]; C.hero.image = ''; }
+    C.hero.transition ??= 'slide'; C.hero.interval ??= 10;
     C.news.forEach(p => {
       p.id ||= Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
       if (!Array.isArray(p.blocks)) {
@@ -123,8 +126,12 @@
 
   // ---------- panels
   const PANELS = {
-    home: () => `<h2>Home page</h2><p class="note">The big photo behind the logo is optional. Without it the home page shows the logo and ribbon.</p><div class="fields">
-      ${imgField('Hero background photo', 'hero.image')}${text('Headline', 'hero.tagline')}${text('Short intro', 'hero.lede', { area: 1, rows: 3 })}
+    home: () => `<h2>Home page</h2><p class="note">Photos behind the logo slide automatically. With no photos the home page shows the logo and ribbon.</p><div class="fields">
+      <div><strong>Slideshow photos</strong>
+      ${C.hero.slides.map((m, j) => `<div class="card slide-card">${cardHead('hero.slides', j, 'Photo ' + (j + 1))}<div class="imgf"><div class="thumb">${safe(m.url) ? `<img src="${esc(safe(m.url))}" alt="">` : 'Missing'}</div></div></div>`).join('')}
+      <div class="btns"><button type="button" class="btn ghost" data-act="addphotos" data-l="hero.slides">+ Add photos</button></div></div>
+      <div class="row2"><label>Transition<select data-p="hero.transition"><option value="slide" ${C.hero.transition !== 'fade' ? 'selected' : ''}>Slide</option><option value="fade" ${C.hero.transition === 'fade' ? 'selected' : ''}>Fade</option></select></label>
+      ${text('Seconds between photos', 'hero.interval', { type: 'number' })}</div>${text('Headline', 'hero.tagline')}${text('Short intro', 'hero.lede', { area: 1, rows: 3 })}
       ${text('Button text', 'hero.buttonText')}${text('Quote', 'quote.text', { area: 1, rows: 3 })}${text('Quote by', 'quote.cite')}</div>`,
     news: () => `<h2>News stories</h2><p class="note">Each story has its own page. Build it like an article: add paragraphs, headings and photos (with captions) in any order. Photos added one after another show side by side. In text you can use *italic* and **bold**. The newest three stories appear on the home page.</p>
       <div class="fields">${C.news.map((p, i) => postCard(p, i)).join('')}${addBtn('news', 'Add story')}</div>`,
@@ -163,7 +170,7 @@
 
   // ---------- panel events
   $('#panel').addEventListener('toggle', e => { const d = e.target; if (d.dataset && d.dataset.pid) { if (d.open) openPosts.add(d.dataset.pid); else openPosts.delete(d.dataset.pid); } }, true);
-  $('#panel').addEventListener('input', e => { const p = e.target.dataset.p; if (p) set(p, e.target.value); });
+  $('#panel').addEventListener('input', e => { const p = e.target.dataset.p; if (p) set(p, e.target.type === 'number' ? Math.max(3, Number(e.target.value) || 10) : e.target.value); });
   $('#panel').addEventListener('click', async e => {
     const b = e.target.closest('[data-act]'); if (!b) return;
     const act = b.dataset.act;

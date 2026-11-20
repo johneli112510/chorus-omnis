@@ -8,6 +8,7 @@
   // Menu
   const btn = $('.menu-btn'), nav = $('#nav');
   btn.addEventListener('click', () => { const o = nav.classList.toggle('open'); btn.setAttribute('aria-expanded', o); });
+  nav.addEventListener('click', e => { if (e.target.closest('a')) { nav.classList.remove('open'); btn.setAttribute('aria-expanded', 'false'); } });
 
   // Content
   let C;
@@ -59,6 +60,11 @@
     <div class="event-body"><h3>${esc(c.title)}</h3><p>${esc(c.venue)}</p></div>
     ${safe(c.link) ? `<a class="btn small" href="${esc(safe(c.link))}" target="_blank" rel="noopener">Tickets and details</a>` : ''}</article>`;
 
+  const heroSlides = h => {
+    const l = (h.slides || []).map(x => typeof x === 'string' ? x : (x && x.url)).filter(u => safe(u));
+    if (!l.length && safe(h.image)) l.push(h.image);
+    return l.map(safe);
+  };
   const initials = n => String(n || '?').split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
 
   function articleHtml(p) {
@@ -90,10 +96,14 @@
       const next = upcoming[0];
       const photos = gallery.filter(m => m.kind !== 'video').slice(0, 6);
       lbItems = gallery.map((m, i) => ({ k: 'g' + i, url: safe(m.url), caption: m.caption || '', video: m.kind === 'video' }));
-      return `<section class="hero ${safe(h.image) ? 'has-photo' : ''}">
-        <div class="hero-inner"><div class="plate"><img src="${safe(h.image) ? '/assets/logo-white.png' : '/assets/logo-transparent.png'}" alt="Chorus Omnis"></div>
+      const slides = heroSlides(h), hasPhoto = slides.length > 0;
+      const controls = slides.length > 1 ? `<button type="button" class="hero-arrow prev" data-dir="-1" aria-label="Previous photo">&#8249;</button><button type="button" class="hero-arrow next" data-dir="1" aria-label="Next photo">&#8250;</button>
+        <div class="hero-dots" role="group" aria-label="Photo slideshow">${slides.map((_, i) => `<button type="button" data-slide="${i}" aria-label="Show photo ${i + 1}"></button>`).join('')}</div>` : '';
+      return `<section class="hero ${hasPhoto ? 'has-photo' : ''}">
+        ${hasPhoto ? `<div class="hero-slides ${h.transition === 'fade' ? 'fade' : ''}" aria-hidden="true">${slides.map(() => '<div class="slide"></div>').join('')}</div><div class="hero-overlay"></div>` : ''}
+        <div class="hero-inner"><div class="plate"><img src="${hasPhoto ? '/assets/logo-white.png' : '/assets/logo-transparent.png'}" alt="Chorus Omnis"></div>
         <h1>${esc(h.tagline)}</h1><p class="lede">${esc(h.lede)}</p>
-        <a class="btn" href="/concerts.html">${esc(g(h, 'buttonText', 'See our concerts'))}</a></div>${ribbon}</section>
+        <a class="btn" href="/concerts.html">${esc(g(h, 'buttonText', 'See our concerts'))}</a></div>${controls}${ribbon}</section>
         ${q.text ? `<section class="band"><div class="narrow"><p class="quote">&ldquo;${esc(q.text)}&rdquo;</p><p class="cite">${esc(q.cite)}</p></div></section>` : ''}
         ${next ? `<section class="wrap"><h2 class="sec">Next concert</h2>${event(next)}</section>` : ''}
         ${posts.length ? `<section class="wrap"><h2 class="sec">Latest News</h2><div class="posts">${posts.slice(0, 3).map(postCard).join('')}</div>${posts.length > 3 ? '<p class="more"><a href="/news.html">All news</a></p>' : ''}</section>` : ''}
@@ -171,9 +181,67 @@
   const root = $('#root');
   root.innerHTML = (views[root.dataset.page] || views.home)();
 
-  // Hero photo
-  const hero = $('.hero.has-photo');
-  if (hero && safe(C.hero.image)) hero.style.backgroundImage = `linear-gradient(rgba(10,10,20,.35),rgba(10,10,20,.6)),url("${encodeURI(safe(C.hero.image))}")`;
+  // Hero slideshow
+  const heroEl = $('.hero.has-photo');
+  if (heroEl) {
+    const urls = heroSlides(C.hero || {});
+    const els = [...heroEl.querySelectorAll('.slide')];
+    els.forEach((el, i) => { el.style.backgroundImage = `url("${encodeURI(urls[i])}")`; });
+    els[0].classList.add('active');
+    if (els.length > 1) {
+      const dots = [...heroEl.querySelectorAll('.hero-dots button')];
+      const delay = Math.max(3, Number(C.hero.interval) || 10) * 1000;
+      const reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+      urls.forEach(u => { const im = new Image(); im.src = u; });
+      let cur = 0, timer = null;
+      const mark = () => dots.forEach((d, i) => d.setAttribute('aria-current', i === cur ? 'true' : 'false'));
+      const go = (n, dir = 1) => {
+        const old = cur; n = (n + els.length) % els.length;
+        if (n === old) return;
+        cur = n;
+        els.forEach((el, i) => { if (i !== old && i !== n) { el.style.transition = 'none'; el.className = 'slide'; } });
+        const nw = els[n], ol = els[old];
+        nw.style.transition = 'none'; nw.className = dir > 0 ? 'slide' : 'slide prev';
+        void nw.offsetWidth;
+        nw.style.transition = ''; ol.style.transition = '';
+        ol.className = dir > 0 ? 'slide prev' : 'slide';
+        nw.className = 'slide active';
+        mark();
+      };
+      const stop = () => { clearInterval(timer); timer = null; };
+      const start = () => { stop(); if (!reduce) timer = setInterval(() => go(cur + 1), delay); };
+      heroEl.addEventListener('click', e => {
+        const d = e.target.closest('[data-slide]'), a = e.target.closest('[data-dir]');
+        if (d) { const n = +d.dataset.slide; go(n, n > cur ? 1 : -1); start(); }
+        else if (a) { go(cur + +a.dataset.dir, +a.dataset.dir); start(); }
+      });
+      heroEl.addEventListener('mouseenter', stop);
+      heroEl.addEventListener('mouseleave', start);
+      let x0 = null;
+      heroEl.addEventListener('touchstart', e => { x0 = e.touches[0].clientX; }, { passive: true });
+      heroEl.addEventListener('touchend', e => {
+        if (x0 == null) return;
+        const dx = e.changedTouches[0].clientX - x0; x0 = null;
+        if (Math.abs(dx) > 50) { go(cur + (dx < 0 ? 1 : -1), dx < 0 ? 1 : -1); start(); }
+      }, { passive: true });
+      document.addEventListener('visibilitychange', () => { if (document.hidden) stop(); else start(); });
+      mark(); start();
+    }
+  }
+
+  // Home page: header fades away while scrolling down, returns when scrolling up
+  if (root.dataset.page === 'home') {
+    const top = $('.top'); let last = window.scrollY, ticking = false;
+    window.addEventListener('scroll', () => {
+      if (ticking) return; ticking = true;
+      requestAnimationFrame(() => {
+        const y = window.scrollY;
+        if (nav.classList.contains('open') || y < 80 || y < last - 4) top.classList.remove('fade');
+        else if (y > last + 4 && y > 160) top.classList.add('fade');
+        last = y; ticking = false;
+      });
+    }, { passive: true });
+  }
 
   // Social links
   const labels = { facebook: 'Facebook', instagram: 'Instagram', youtube: 'YouTube', spotify: 'Spotify', tiktok: 'TikTok' };

@@ -3,7 +3,10 @@
     "image": "",
     "tagline": "A choir for everyone, singing together.",
     "lede": "Chorus Omnis brings voices together to share choral music with our community.",
-    "buttonText": "See our concerts"
+    "buttonText": "See our concerts",
+    "slides": [],
+    "transition": "slide",
+    "interval": 10
   },
   "quote": {
     "text": "Replace this with a short quote from your founder or conductor about why your choir sings.",
