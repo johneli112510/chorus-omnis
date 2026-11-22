@@ -126,12 +126,22 @@
 
   const fmtDT = d => { const x = new Date(d); return isNaN(x) ? '' : x.toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }); };
   const replyOpen = new Set(); let copyTo = [];
+  const attach = new Map();                       // message key -> files chosen for the reply
+  const MAX_ATT = 17 * 1024 * 1024;
+  const attList = key => { const l = attach.get(key) || [], tot = l.reduce((n, f) => n + f.size, 0);
+    return l.map((f, i) => `<div class="att"><span>${esc(f.name)} <span class="muted">(${esc(fmtSize(f.size))})</span></span><button type="button" class="btn ghost sm" data-m="rmfile" data-key="${esc(key)}" data-i="${i}" aria-label="Remove ${esc(f.name)}">Remove</button></div>`).join('')
+      + (l.length ? `<div class="muted ${tot > MAX_ATT ? 'err' : ''}">${l.length} file${l.length > 1 ? 's' : ''}, ${esc(fmtSize(tot))} of ${MAX_ATT / 1048576} MB</div>` : ''); };
   const msgCard = m => `<div class="card msg ${m.read ? '' : 'unread'}"><div class="card-head"><strong>${esc(m.name)}</strong><span class="muted">${esc(fmtDT(m.date))}</span></div>
     <div><a href="mailto:${esc(m.email)}">${esc(m.email)}</a></div><div class="msg-body">${esc(m.message)}</div>
-    ${(m.replies || []).map(r => `<div class="reply-sent"><div class="muted">You replied on ${esc(fmtDT(r.date))}</div><div class="msg-body">${esc(r.body)}</div></div>`).join('')}
-    ${replyOpen.has(m.key) ? `<div class="reply-box"><label>Subject<input data-r="subject" value="${esc('Re: your message to Chorus Omnis')}"></label>
-      <label>Your reply to ${esc(m.name)}<textarea data-r="body" rows="6" placeholder="Write your reply..."></textarea></label>
-      <p class="note" style="margin:0">Sent from the choir address. A copy also goes to ${esc(copyTo.join(', ') || 'your choir inbox')}.</p>
+    ${(m.replies || []).map(r => `<div class="reply-sent"><div class="muted">You replied on ${esc(fmtDT(r.date))}${(r.cc || []).length ? ' (Cc: ' + esc(r.cc.join(', ')) + ')' : ''}</div><div class="msg-body">${esc(r.body)}</div>
+      ${(r.files || []).length ? `<div class="muted">Attached: ${r.files.map(f => esc(f.name) + ' (' + esc(fmtSize(f.size)) + ')').join(', ')}</div>` : ''}</div>`).join('')}
+    ${replyOpen.has(m.key) ? `<div class="reply-box" data-key="${esc(m.key)}"><div class="to-line"><strong>To:</strong> ${esc(m.name)} &lt;${esc(m.email)}&gt;</div>
+      <label>Cc (optional, separate with commas)<input data-r="cc" placeholder="name@example.com, other@example.com"></label>
+      <label>Subject<input data-r="subject" value="${esc('Re: your message to Chorus Omnis')}"></label>
+      <label>Message<textarea data-r="body" rows="8" placeholder="Write your reply..."></textarea></label>
+      <div class="attach-zone"><label class="btn ghost sm attach-btn">Attach files<input type="file" multiple data-r="files" hidden></label>
+        <span class="muted">or drag files here. Up to 10 files, 17 MB in total.</span><div class="att-list" data-r="list">${attList(m.key)}</div></div>
+      <p class="note" style="margin:0">Sent from the choir address. A hidden copy also goes to ${esc(copyTo.join(', ') || 'your choir inbox')}.</p>
       <div class="btns"><button type="button" class="btn sm" data-m="send" data-key="${esc(m.key)}">Send reply</button>
       <button type="button" class="btn ghost sm" data-m="cancel" data-key="${esc(m.key)}">Cancel</button></div><p class="form-status" data-r="status" role="status"></p></div>` : ''}
     <div class="btns">${replyOpen.has(m.key) ? '' : `<button type="button" class="btn sm" data-m="reply" data-key="${esc(m.key)}">Reply</button>`}
@@ -160,6 +170,23 @@
     if (!r.ok) { out.className = 'form-status err'; out.textContent = await errOf(r); return; }
     await loadMail();
   });
+  function postForm(url, fd, onProg) {
+    return new Promise(resolve => {
+      const x = new XMLHttpRequest(); x.open('POST', url); x.setRequestHeader('X-Requested-With', 'admin');
+      x.upload.onprogress = e => { if (e.lengthComputable) onProg(e.loaded / e.total); };
+      x.onload = () => { let j = {}; try { j = JSON.parse(x.responseText); } catch {} if (x.status === 401) showLogin(); resolve({ ok: x.status >= 200 && x.status < 300, status: x.status, json: j }); };
+      x.onerror = () => resolve({ ok: false, status: 0, json: { error: 'Network error. Please try again.' } });
+      x.send(fd);
+    });
+  }
+  function addFiles(box, files) {
+    const key = box.dataset.key, l = attach.get(key) || []; attach.set(key, l);
+    for (const f of files) { if (l.length >= 10) break; if (!l.some(x => x.name === f.name && x.size === f.size)) l.push(f); }
+    box.querySelector('[data-r=list]').innerHTML = attList(key);
+  }
+  $('#panel').addEventListener('change', e => { if (e.target.dataset.r === 'files') { addFiles(e.target.closest('.reply-box'), [...e.target.files]); e.target.value = ''; } });
+  ['dragenter', 'dragover'].forEach(n => $('#panel').addEventListener(n, e => { const z = e.target.closest && e.target.closest('.reply-box'); if (z) { e.preventDefault(); z.classList.add('drag'); } }));
+  ['dragleave', 'drop'].forEach(n => $('#panel').addEventListener(n, e => { const z = e.target.closest && e.target.closest('.reply-box'); if (z) { e.preventDefault(); if (n === 'drop' || !z.contains(e.relatedTarget)) z.classList.remove('drag'); if (n === 'drop') addFiles(z, [...e.dataTransfer.files]); } }));
   async function loadMsgs() {
     try {
       const r = await api('/api/messages'); if (!r.ok) return;
@@ -170,16 +197,20 @@
   $('#panel').addEventListener('click', async e => {
     const b = e.target.closest('[data-m]'); if (!b) return;
     const key = b.dataset.key, m = msgs.find(x => x.key === key); if (!m) return;
-    if (b.dataset.m === 'reply') { replyOpen.add(key); $('#mlist').innerHTML = msgList(); const t = $('#mlist .reply-box textarea'); if (t) t.focus(); return; }
-    if (b.dataset.m === 'cancel') { replyOpen.delete(key); $('#mlist').innerHTML = msgList(); return; }
+    if (b.dataset.m === 'reply') { replyOpen.add(key); attach.set(key, attach.get(key) || []); $('#mlist').innerHTML = msgList(); const t = $('#mlist .reply-box textarea'); if (t) t.focus(); return; }
+    if (b.dataset.m === 'cancel') { replyOpen.delete(key); attach.delete(key); $('#mlist').innerHTML = msgList(); return; }
+    if (b.dataset.m === 'rmfile') { const l = attach.get(key) || []; l.splice(+b.dataset.i, 1); const box = b.closest('.reply-box'); box.querySelector('[data-r=list]').innerHTML = attList(key); return; }
     if (b.dataset.m === 'send') {
       const box = b.closest('.reply-box'), body = box.querySelector('[data-r=body]').value.trim(), subject = box.querySelector('[data-r=subject]').value;
-      const st = box.querySelector('[data-r=status]');
+      const cc = box.querySelector('[data-r=cc]').value, st = box.querySelector('[data-r=status]'), files = attach.get(key) || [];
       if (!body) { st.className = 'form-status err'; st.textContent = 'Please write your reply.'; return; }
-      b.disabled = true; st.className = 'form-status'; st.textContent = 'Sending...';
-      const r = await api('/api/messages?key=' + encodeURIComponent(key), { method: 'POST', body: JSON.stringify({ subject, body }), headers: { 'content-type': 'application/json' } });
-      if (!r.ok) { b.disabled = false; st.className = 'form-status err'; st.textContent = await errOf(r); return; }
-      const j = await r.json(); m.replies = j.replies; m.read = true; replyOpen.delete(key);
+      if (files.reduce((n, f) => n + f.size, 0) > MAX_ATT) { st.className = 'form-status err'; st.textContent = 'Attachments are over 17 MB. Remove some, or upload big files in Photos and Videos and paste the link in your reply.'; return; }
+      const fd = new FormData(); fd.set('subject', subject); fd.set('body', body); fd.set('cc', cc);
+      files.forEach(f => fd.append('files', f, f.name));
+      b.disabled = true; st.className = 'form-status'; st.textContent = files.length ? 'Uploading 0%...' : 'Sending...';
+      const res = await postForm('/api/messages?key=' + encodeURIComponent(key), fd, p => { st.textContent = p < 1 ? `Uploading ${Math.round(p * 100)}%...` : 'Sending...'; });
+      if (!res.ok) { b.disabled = false; st.className = 'form-status err'; st.textContent = (res.json && res.json.error) || 'Something went wrong. Please try again.'; return; }
+      m.replies = res.json.replies; m.read = true; replyOpen.delete(key); attach.delete(key);
       unread = msgs.filter(x => !x.read).length; renderTabs(); $('#mlist').innerHTML = msgList(); return;
     }
     if (b.dataset.m === 'del') {

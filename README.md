@@ -42,6 +42,10 @@ Admin -> Messages -> **Reply** opens a box under the message. **Send reply** ema
 (change with the `REPLY_FROM` variable), saves your reply under the message, and sends a hidden copy (BCC) to the same choir inbox
 that receives new-message alerts (by default `info@chorus-omnis.com`, which Email Routing forwards to Gmail). The visitor's answers go to the
 Contact email set in the admin (or `info@<your domain>`). Needs the domain enabled in Cloudflare Email Service.
+The reply box works like an email: **To**, optional **Cc**, **Subject**, **Message**, and **Attach files** (button or drag and drop;
+up to 10 files, 17 MB in total, because Cloudflare limits a whole email to 25 MB). Common program files (.exe, .bat, .js ...) are blocked.
+For bigger files, upload them in Photos and Videos, press **Copy link** and paste the link in the message.
+Attachments are not stored on the website; the thread keeps only the file names.
 
 ## Email alerts for new messages
 Every message sent through the Contact page is saved under Admin -> Messages and also emailed to your choir address.

@@ -184,6 +184,8 @@ return { onRequestGet, onRequestPut, onRequestDelete };
 
 // ---------- /api/contact (public) and /api/messages (admin inbox)
 const MSG_PREFIX = 'messages/';
+const MAX_ATTACH = 17 * 1024 * 1024; // email limit is 25 MiB including encoding overhead
+const BLOCKED_EXT = /\.(exe|bat|cmd|com|scr|pif|js|jse|vbs|vbe|wsf|msi|jar|ps1|lnk|dll|reg)$/i;
 const EMAIL_RE = /^[^\s@"<>]+@[^\s@"<>]+\.[^\s@"<>]{2,}$/;
 
 async function sha(text) {
@@ -278,11 +280,23 @@ const messagesApi = (() => {
     const key = keyOf(request);
     if (!key) return json({ error: 'Bad key' }, 400);
     if (!env.EMAIL) return json({ error: 'Email sending is not set up yet. Make sure the EMAIL connection is in wrangler.jsonc and redeploy.' }, 501);
-    let b; try { b = await request.json(); } catch { return json({ error: 'Invalid request.' }, 400); }
+    let b = {}, files = [];
+    try {
+      if ((request.headers.get('content-type') || '').includes('multipart/form-data')) {
+        const fd = await request.formData();
+        b = { subject: fd.get('subject'), body: fd.get('body'), cc: fd.get('cc') };
+        files = fd.getAll('files').filter(f => f && typeof f !== 'string');
+      } else b = await request.json();
+    } catch { return json({ error: 'Invalid request.' }, 400); }
     const subject = oneLine(b.subject) || 'Reply from Chorus Omnis';
     const body = clean(b.body);
     if (!body) return json({ error: 'Please write your reply.' }, 400);
     if (body.length > 10000) return json({ error: 'Reply is too long.' }, 400);
+    if (files.length > 10) return json({ error: 'You can attach up to 10 files.' }, 400);
+    const total = files.reduce((n, f) => n + f.size, 0);
+    if (total > MAX_ATTACH) return json({ error: `Attachments are ${(total / 1048576).toFixed(1)} MB in total. The limit is ${MAX_ATTACH / 1048576} MB per email. Upload big files in Photos and Videos and paste the link in your reply.` }, 413);
+    const bad = files.find(f => BLOCKED_EXT.test(f.name || ''));
+    if (bad) return json({ error: `"${bad.name}" is a file type that email services block. Zip it or share a link instead.` }, 400);
     const obj = await env.MEDIA.get(key);
     if (!obj) return json({ error: 'Not found' }, 404);
     const m = await obj.json();
@@ -298,7 +312,20 @@ const messagesApi = (() => {
       text: `${body}\n\n--\nChorus Omnis\n\nOn ${m.date ? new Date(m.date).toUTCString() : 'an earlier date'}, ${m.name} wrote:\n${quoted}\n`,
     };
     if (replyTo) msg.replyTo = replyTo;
-    if (copies.length) msg.bcc = copies;
+    const cc = addrList(b.cc).filter(x => x.toLowerCase() !== String(m.email).toLowerCase());
+    if (cc.length) msg.cc = cc;
+    if (copies.length) msg.bcc = copies.filter(x => !cc.some(c => c.toLowerCase() === x));
+    if (!msg.bcc || !msg.bcc.length) delete msg.bcc;
+    const sentFiles = [];
+    if (files.length) {
+      msg.attachments = [];
+      for (const f of files) {
+        const filename = String(f.name || 'file').replace(/[\\/\x00-\x1f"<>|:*?]+/g, '_').replace(/^[._]+/, '').slice(-120) || 'file';
+        const type = /^[\w.+-]+\/[\w.+-]+$/.test(f.type || '') ? f.type : 'application/octet-stream';
+        msg.attachments.push({ content: await f.arrayBuffer(), filename, type, disposition: 'attachment' });
+        sentFiles.push({ name: filename, size: f.size });
+      }
+    }
     try { await env.EMAIL.send(msg); }
     catch (e) {
       const t = errText(e);
@@ -307,9 +334,9 @@ const messagesApi = (() => {
       return json({ error: 'The email could not be sent: ' + t }, 502);
     }
     m.read = true;
-    m.replies = [...(m.replies || []), { date: new Date().toISOString(), subject, body }].slice(-20);
+    m.replies = [...(m.replies || []), { date: new Date().toISOString(), subject, body, cc, files: sentFiles }].slice(-20);
     await env.MEDIA.put(key, JSON.stringify(m), { httpMetadata: { contentType: 'application/json' } });
-    return json({ ok: true, replies: m.replies, copiedTo: copies });
+    return json({ ok: true, replies: m.replies, copiedTo: msg.bcc || [] });
   }
   async function onRequestPut({ request, env }) {
     const denied = await requireAdmin(request, env);
