@@ -39,16 +39,22 @@ a minimum fill-in time and one message per visitor every 30 seconds.
 
 ## Sending replies from the website
 Admin -> Messages -> **Reply** opens a box under the message. **Send reply** emails the visitor from your site address
-(for example `info@chorus-omnis.com`). Visitors who answer reach your choir inbox (Reply-To is the email set in Admin -> Contact).
-Sent replies are saved under the message. This uses Cloudflare **Email Service**:
-1. Cloudflare dashboard -> Compute & AI (or Email) -> **Email Service** -> onboard your domain `chorus-omnis.com`
-   and add the DNS records it shows. Wait until the domain shows as active for sending.
-2. The binding `EMAIL` is already in `wrangler.jsonc` (`"send_email": [{ "name": "EMAIL" }]`). Redeploy.
-3. Optional variable `MAIL_FROM` = the address replies are sent from (must be on your onboarded domain).
-   If you skip it, `info@<your domain>` is used.
-4. Optional variable `NOTIFY_EMAIL` = your inbox. You then also get an email alert for each new message.
-If sending is not set up yet, the Reply box shows the reason and an "Open in my mail app instead" link.
-Email Service may need a paid Workers plan for sending to people who are not verified addresses; check your Cloudflare plan.
+(for example `info@chorus-omnis.com`) and saves your reply under the message. Visitors who answer reach the choir email set in Admin -> Contact.
+This uses Cloudflare **Email Service**.
+
+**Receiving copies (works right away):** add the variable `NOTIFY_EMAIL` (Settings -> Variables and Secrets) with the addresses from your
+Email Routing destination list, separated by commas (up to 5), for example `one@gmail.com, two@icloud.com`.
+- every message sent through the website is emailed to all of them, and
+- every reply you send is copied (BCC) to all of them.
+Use `COPY_EMAIL` instead if the reply copies should go to different addresses.
+These addresses must be verified destination addresses (Email Routing -> Destination addresses) until sending is enabled below.
+
+**Sending replies to visitors (needs this one-time setup):** until your domain is enabled, Cloudflare only allows sending to those verified
+addresses and the Reply box shows "destination address is not a verified address".
+1. Cloudflare dashboard -> **Email Service** -> onboard `chorus-omnis.com`, add the DNS records it shows, wait until it is active for sending.
+2. The binding `EMAIL` is already in `wrangler.jsonc`. Redeploy.
+3. Optional variable `MAIL_FROM` = the sending address (must be on your domain); default is `info@<your domain>`.
+If sending is not possible yet, the Reply box offers "Open in my mail app instead".
 
 ## Limits
 - Uploads up to 95 MB each (Cloudflare request limit is 100 MB on Free and Pro). For long videos, upload to YouTube and add the link under Social.

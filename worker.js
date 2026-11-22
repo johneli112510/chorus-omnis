@@ -198,14 +198,16 @@ const fromAddress = (env, host) => ({ email: env.MAIL_FROM || ('info@' + host.re
 async function siteContactEmail(env) {
   try { const o = await env.MEDIA.get('site/content.json'); const c = o && await o.json(); const e = c && c.contact && c.contact.email; return EMAIL_RE.test(e || '') ? e : ''; } catch { return ''; }
 }
-// Optional alert to the choir inbox when a visitor sends a message (needs NOTIFY_EMAIL).
+const addrList = v => String(v || '').split(',').map(x => x.trim()).filter(x => EMAIL_RE.test(x)).slice(0, 5);
+// Alert to the choir inbox(es) when a visitor sends a message: every address in NOTIFY_EMAIL (comma separated).
 async function notifyByEmail(env, host, m) {
-  if (!env.EMAIL || !env.NOTIFY_EMAIL) return;
-  await env.EMAIL.send({
-    to: env.NOTIFY_EMAIL, from: fromAddress(env, host), replyTo: { email: m.email, name: m.name },
+  const list = addrList(env.NOTIFY_EMAIL);
+  if (!env.EMAIL || !list.length) return;
+  await Promise.allSettled(list.map(to => env.EMAIL.send({
+    to, from: fromAddress(env, host), replyTo: { email: m.email, name: m.name },
     subject: `New website message from ${oneLine(m.name)}`,
     text: `From: ${m.name} <${m.email}>\n\n${m.message}\n\nReply from the admin page: /admin.html (Messages tab).`,
-  });
+  })));
 }
 
 const contactApi = (() => {
@@ -277,12 +279,20 @@ const messagesApi = (() => {
       text: `${body}\n\n--\nChorus Omnis\n\nOn ${m.date ? new Date(m.date).toUTCString() : 'an earlier date'}, ${m.name} wrote:\n${quoted}\n`,
     };
     if (replyTo) msg.replyTo = replyTo;
+    // private copy of every reply to the choir inbox(es): COPY_EMAIL (or NOTIFY_EMAIL), comma separated
+    const copies = addrList(env.COPY_EMAIL || env.NOTIFY_EMAIL).filter(x => x.toLowerCase() !== String(m.email).toLowerCase());
+    if (copies.length) msg.bcc = copies;
     try { await env.EMAIL.send(msg); }
-    catch (e) { return json({ error: 'The email could not be sent: ' + (e && e.message ? e.message : 'unknown error') }, 502); }
+    catch (e) {
+      const t = e && e.message ? String(e.message) : 'unknown error';
+      if (/not a verified address|verified destination|E_RECIPIENT_PLAN_RESTRICTED/i.test(t))
+        return json({ error: 'Cloudflare only allows sending to verified addresses until your domain is enabled for sending. In Cloudflare open Email Service, onboard chorus-omnis.com and add the DNS records it shows (see README). Details: ' + t }, 502);
+      return json({ error: 'The email could not be sent: ' + t }, 502);
+    }
     m.read = true;
     m.replies = [...(m.replies || []), { date: new Date().toISOString(), subject, body }].slice(-20);
     await env.MEDIA.put(key, JSON.stringify(m), { httpMetadata: { contentType: 'application/json' } });
-    return json({ ok: true, replies: m.replies });
+    return json({ ok: true, replies: m.replies, copied: copies.length });
   }
   async function onRequestPut({ request, env }) {
     const denied = await requireAdmin(request, env);

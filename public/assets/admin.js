@@ -161,6 +161,7 @@
         return;
       }
       const j = await r.json(); m.replies = j.replies; m.read = true; replyOpen.delete(key);
+      if (!j.copied) alert('Reply sent. Tip: add a NOTIFY_EMAIL setting in Cloudflare to also receive a copy of every reply.');
       unread = msgs.filter(x => !x.read).length; renderTabs(); $('#mlist').innerHTML = msgList(); return;
     }
     if (b.dataset.m === 'del') {
