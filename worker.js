@@ -182,6 +182,105 @@ async function onRequestDelete({ request, env }) {
 return { onRequestGet, onRequestPut, onRequestDelete };
 })();
 
+// ---------- /api/contact (public) and /api/messages (admin inbox)
+const MSG_PREFIX = 'messages/';
+const EMAIL_RE = /^[^\s@"<>]+@[^\s@"<>]+\.[^\s@"<>]{2,}$/;
+
+async function sha(text) {
+  const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return [...new Uint8Array(d)].slice(0, 8).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+const clean = s => String(s ?? '').replace(/\r/g, '').trim();
+const oneLine = s => clean(s).replace(/[\n<>"]/g, ' ').slice(0, 100);
+const b64 = s => { const b = new TextEncoder().encode(s); let t = ''; b.forEach(x => t += String.fromCharCode(x)); return btoa(t); };
+
+// Optional email alert. Works only if a send_email binding named MAIL and a NOTIFY_EMAIL variable are set (see README).
+async function notifyByEmail(env, host, m) {
+  if (!env.MAIL || !env.NOTIFY_EMAIL) return;
+  const to = env.NOTIFY_EMAIL;
+  const { EmailMessage } = await import('cloudflare:email');
+  const from = env.MAIL_FROM || `website@${host}`;
+  const subject = `New website message from ${oneLine(m.name)}`;
+  const body = `From: ${m.name} <${m.email}>\n\n${m.message}\n`;
+  const raw = [
+    `From: Chorus Omnis Website <${from}>`, `To: ${to}`, `Reply-To: ${oneLine(m.name)} <${m.email}>`,
+    `Subject: =?UTF-8?B?${b64(subject)}?=`, `Message-ID: <${crypto.randomUUID()}@${host}>`,
+    `Date: ${new Date().toUTCString()}`, 'MIME-Version: 1.0', 'Content-Type: text/plain; charset=UTF-8',
+    'Content-Transfer-Encoding: base64', '', b64(body).replace(/(.{76})/g, '$1\r\n'),
+  ].join('\r\n');
+  await env.MAIL.send(new EmailMessage(from, to, raw));
+}
+
+const contactApi = (() => {
+  async function onRequestPost({ request, env, ctx }) {
+    if (!env.MEDIA) return json({ error: 'Messages are not available right now.' }, 500);
+    const text = await request.text();
+    if (text.length > 20000) return json({ error: 'Message is too long.' }, 413);
+    let b; try { b = JSON.parse(text); } catch { return json({ error: 'Invalid request.' }, 400); }
+    // bots: hidden field filled in, or form submitted within 2.5 seconds of loading
+    const delta = Date.now() - Number(b.t);
+    if (clean(b.website) || (delta >= 0 && delta < 2500)) return json({ ok: true });
+    const name = oneLine(b.name), email = clean(b.email).slice(0, 200), message = clean(b.message);
+    if (!name) return json({ error: 'Please enter your name.' }, 400);
+    if (!EMAIL_RE.test(email)) return json({ error: 'Please enter a valid email address.' }, 400);
+    if (!message) return json({ error: 'Please write a message.' }, 400);
+    if (message.length > 5000) return json({ error: 'Message is too long (5000 characters maximum).' }, 400);
+    // one message per visitor every 30 seconds
+    const rl = 'rl/' + await sha(request.headers.get('cf-connecting-ip') || 'unknown');
+    const seen = await env.MEDIA.head(rl);
+    if (seen && Date.now() - new Date(seen.uploaded).getTime() < 30000)
+      return json({ error: 'Please wait a moment before sending another message.' }, 429);
+    await env.MEDIA.put(rl, '1');
+    const key = MSG_PREFIX + String(9e12 - Date.now()).padStart(13, '0') + '-' + crypto.randomUUID().slice(0, 6);
+    const m = { name, email, message, date: new Date().toISOString(), read: false };
+    await env.MEDIA.put(key, JSON.stringify(m), { httpMetadata: { contentType: 'application/json' } });
+    const job = notifyByEmail(env, new URL(request.url).hostname, m).catch(() => {});
+    if (ctx && ctx.waitUntil) ctx.waitUntil(job);
+    return json({ ok: true });
+  }
+  return { onRequestPost };
+})();
+
+const messagesApi = (() => {
+  const keyOf = request => {
+    const k = new URL(request.url).searchParams.get('key') || '';
+    return k.startsWith(MSG_PREFIX) && !k.includes('..') ? k : '';
+  };
+  async function onRequestGet({ request, env }) {
+    const denied = await requireAdmin(request, env);
+    if (denied) return denied;
+    if (!env.MEDIA) return json({ error: 'R2 storage is not connected.' }, 500);
+    const page = await env.MEDIA.list({ prefix: MSG_PREFIX, limit: 200 });
+    const items = (await Promise.all(page.objects.map(async o => {
+      const obj = await env.MEDIA.get(o.key);
+      if (!obj) return null;
+      try { return { key: o.key, ...(await obj.json()) }; } catch { return null; }
+    }))).filter(Boolean);
+    return json({ items });
+  }
+  async function onRequestPut({ request, env }) {
+    const denied = await requireAdmin(request, env);
+    if (denied) return denied;
+    const key = keyOf(request);
+    if (!key) return json({ error: 'Bad key' }, 400);
+    const obj = await env.MEDIA.get(key);
+    if (!obj) return json({ error: 'Not found' }, 404);
+    const m = await obj.json();
+    m.read = new URL(request.url).searchParams.get('read') === '1';
+    await env.MEDIA.put(key, JSON.stringify(m), { httpMetadata: { contentType: 'application/json' } });
+    return json({ ok: true });
+  }
+  async function onRequestDelete({ request, env }) {
+    const denied = await requireAdmin(request, env);
+    if (denied) return denied;
+    const key = keyOf(request);
+    if (!key) return json({ error: 'Bad key' }, 400);
+    await env.MEDIA.delete(key);
+    return json({ ok: true });
+  }
+  return { onRequestGet, onRequestPut, onRequestDelete };
+})();
+
 // ---------- /media/*
 async function serveMedia(request, env, url) {
   if (!env.MEDIA) return new Response('Storage not configured', { status: 500 });
@@ -250,6 +349,8 @@ const ROUTES = {
   '/api/session': sessionApi,
   '/api/content': contentApi,
   '/api/media': mediaApi,
+  '/api/contact': contactApi,
+  '/api/messages': messagesApi,
 };
 
 export default {

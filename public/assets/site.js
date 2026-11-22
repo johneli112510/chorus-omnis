@@ -172,8 +172,10 @@
     contact() {
       const c = C.contact || {};
       return pageHead('Contact', 'Audition, book us for an event, or send a message') + `<section class="wrap contact">
-        <form id="cform"><label>Name<input name="name" required></label><label>Email<input type="email" name="email" required></label>
-        <label>Message<textarea name="message" rows="6" required></textarea></label><button class="btn" type="submit">Send message</button></form>
+        <form id="cform"><label>Name<input name="name" required maxlength="100" autocomplete="name"></label><label>Email<input type="email" name="email" required maxlength="200" autocomplete="email"></label>
+        <label>Message<textarea name="message" rows="6" required maxlength="5000"></textarea></label>
+        <div class="hp" aria-hidden="true"><label>Website<input name="website" tabindex="-1" autocomplete="off"></label></div>
+        <button class="btn" type="submit">Send message</button><p class="form-status" id="cstatus" role="status"></p></form>
         <aside class="info"><h2>Get in touch</h2>${c.email ? `<p>${esc(c.email)}</p>` : ''}${c.phone ? `<p>${esc(c.phone)}</p>` : ''}${c.address ? `<p>${esc(c.address)}</p>` : ''}</aside></section>`;
     },
   };
@@ -248,13 +250,27 @@
   $('#social').innerHTML = Object.entries(labels).filter(([k]) => safe(C.social?.[k]))
     .map(([k, l]) => `<a href="${esc(safe(C.social[k]))}" target="_blank" rel="noopener">${l}</a>`).join('');
 
-  // Contact form (opens the visitor's email app)
+  // Contact form: sends the message to the website (the admin reads it under Messages)
   const f = $('#cform');
-  if (f) f.addEventListener('submit', e => {
-    e.preventDefault();
-    const d = new FormData(f), to = (C.contact && C.contact.email) || '';
-    location.href = `mailto:${to}?subject=${encodeURIComponent('Message from ' + d.get('name'))}&body=${encodeURIComponent(d.get('message') + '\n\n' + d.get('name') + ' (' + d.get('email') + ')')}`;
-  });
+  if (f) {
+    const t0 = Date.now();
+    f.addEventListener('submit', async e => {
+      e.preventDefault();
+      const st = $('#cstatus'), bt = f.querySelector('button'), d = new FormData(f);
+      bt.disabled = true; st.className = 'form-status'; st.textContent = 'Sending...';
+      try {
+        const r = await fetch('/api/contact', { method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ name: d.get('name'), email: d.get('email'), message: d.get('message'), website: d.get('website'), t: t0 }) });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.error || 'Could not send your message.');
+        f.innerHTML = '<div class="thanks"><h2>Thank you!</h2><p>Your message was sent. We will get back to you soon.</p></div>';
+      } catch (err) {
+        st.className = 'form-status err';
+        st.textContent = (err.message || 'Could not send your message.') + (C.contact && C.contact.email ? ` You can also email us at ${C.contact.email}.` : '');
+        bt.disabled = false;
+      }
+    });
+  }
 
   // Lightbox (photos only)
   const photos = lbItems.filter(m => !m.video && m.url);

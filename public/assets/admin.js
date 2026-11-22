@@ -4,7 +4,7 @@
   const safe = u => { u = String(u || ''); return /^(\/(?!\/)|https?:\/\/)/.test(u) && !/["'()<>\s]/.test(u) ? u : ''; };
   const H = { 'X-Requested-With': 'admin' };
 
-  let C = {}, openPosts = new Set(), media = [], tab = 'home', dirty = false, mediaLoaded = false, pickResolve = null, setup = {};
+  let C = {}, msgs = null, unread = 0, openPosts = new Set(), media = [], tab = 'home', dirty = false, mediaLoaded = false, pickResolve = null, setup = {};
 
   async function api(url, opt = {}) {
     const r = await fetch(url, { ...opt, headers: { ...H, ...(opt.headers || {}) }, credentials: 'same-origin' });
@@ -64,7 +64,7 @@
     });
     $('#login').hidden = true; $('#app').hidden = false;
     dirty = false; $('#save').disabled = true; status('');
-    renderTabs(); renderPanel();
+    renderTabs(); renderPanel(); loadMsgs();
     if (!s.r2) status('Setup incomplete: the R2 storage (MEDIA) is not connected', 'dirty');
   }
 
@@ -78,9 +78,9 @@
 
   // ---------- tabs
   const TABS = [['home', 'Home'], ['news', 'Latest News'], ['about', 'About'], ['org', 'Organization'], ['vmo', 'Vision and Mission'], ['concerts', 'Concerts'],
-    ['recordings', 'Recordings'], ['gallery', 'Gallery'], ['media', 'Photos and Videos'], ['contact', 'Contact and Social']];
+    ['recordings', 'Recordings'], ['gallery', 'Gallery'], ['media', 'Photos and Videos'], ['messages', 'Messages'], ['contact', 'Contact and Social']];
   function renderTabs() {
-    $('#tabs').innerHTML = TABS.map(([k, l]) => `<button data-tab="${k}" aria-selected="${k === tab}">${l}</button>`).join('');
+    $('#tabs').innerHTML = TABS.map(([k, l]) => `<button data-tab="${k}" aria-selected="${k === tab}">${l}${k === 'messages' && unread ? ` (${unread})` : ''}</button>`).join('');
   }
   $('#tabs').addEventListener('click', e => { const b = e.target.closest('[data-tab]'); if (!b) return; tab = b.dataset.tab; renderTabs(); renderPanel(); });
 
@@ -124,6 +124,36 @@
       <button type="button" class="btn ghost" data-act="addphotos" data-l="news.${i}.blocks">+ Photos</button></div></div>
       ${p.id ? `<p class="note">Page address: /news/${esc(p.id)}</p>` : ''}</div></details>`;
 
+  const fmtDT = d => { const x = new Date(d); return isNaN(x) ? '' : x.toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }); };
+  const msgList = () => msgs.length ? msgs.map(m => `<div class="card msg ${m.read ? '' : 'unread'}"><div class="card-head"><strong>${esc(m.name)}</strong><span class="muted">${esc(fmtDT(m.date))}</span></div>
+    <div><a href="mailto:${esc(m.email)}">${esc(m.email)}</a></div><div class="msg-body">${esc(m.message)}</div>
+    <div class="btns"><a class="btn sm" href="mailto:${esc(m.email)}?subject=${encodeURIComponent('Re: your message to Chorus Omnis')}">Reply by email</a>
+    <button type="button" class="btn ghost sm" data-m="toggle" data-key="${esc(m.key)}">${m.read ? 'Mark unread' : 'Mark read'}</button>
+    <button type="button" class="btn danger sm" data-m="del" data-key="${esc(m.key)}">Delete</button></div></div>`).join('') : '<p>No messages yet.</p>';
+  async function loadMsgs() {
+    try {
+      const r = await api('/api/messages'); if (!r.ok) return;
+      msgs = (await r.json()).items; unread = msgs.filter(m => !m.read).length;
+      renderTabs(); const l = $('#mlist'); if (l && tab === 'messages') l.innerHTML = msgList();
+    } catch {}
+  }
+  $('#panel').addEventListener('click', async e => {
+    const b = e.target.closest('[data-m]'); if (!b) return;
+    const key = b.dataset.key, m = msgs.find(x => x.key === key); if (!m) return;
+    if (b.dataset.m === 'del') {
+      if (!confirm('Delete this message permanently?')) return;
+      const r = await api('/api/messages?key=' + encodeURIComponent(key), { method: 'DELETE' });
+      if (!r.ok) return alert(await errOf(r));
+      msgs = msgs.filter(x => x.key !== key);
+    } else {
+      const read = !m.read;
+      const r = await api('/api/messages?key=' + encodeURIComponent(key) + '&read=' + (read ? 1 : 0), { method: 'PUT' });
+      if (!r.ok) return alert(await errOf(r));
+      m.read = read;
+    }
+    unread = msgs.filter(x => !x.read).length; renderTabs(); $('#mlist').innerHTML = msgList();
+  });
+
   // ---------- panels
   const PANELS = {
     home: () => `<h2>Home page</h2><p class="note">Photos behind the logo slide automatically. With no photos the home page shows the logo and ribbon.</p><div class="fields">
@@ -156,6 +186,7 @@
       ${C.gallery.length ? C.gallery.map((m, i) => `<div class="card">${cardHead('gallery', i, m.kind === 'video' ? 'Video' : 'Photo')}
       <div class="imgf"><div class="thumb">${m.kind === 'video' ? `<video src="${esc(safe(m.url))}#t=0.1" preload="metadata" muted style="width:100%;height:100%;object-fit:cover"></video>` : `<img src="${esc(safe(m.url))}" alt="">`}</div>
       <div style="flex:1">${text('Caption (optional)', `gallery.${i}.caption`)}</div></div></div>`).join('') : '<p>Nothing in the gallery yet. Go to Photos and Videos and tick "In gallery".</p>'}</div>`,
+    messages: () => `<h2>Messages</h2><p class="note">Messages sent from the Contact page on your website appear here.</p><div id="mlist">${msgs === null ? 'Loading...' : msgList()}</div>`,
     contact: () => `<h2>Contact and Social</h2><div class="fields">${text('Email (messages from the contact form go here)', 'contact.email', { type: 'email' })}${text('Phone', 'contact.phone')}${text('Address', 'contact.address', { area: 1, rows: 2 })}
       <h3>Social links</h3><p class="note">Leave blank to hide a link.</p>${['facebook', 'instagram', 'youtube', 'spotify', 'tiktok'].map(k => text(k[0].toUpperCase() + k.slice(1), 'social.' + k, { ph: 'https://' })).join('')}</div>`,
     media: () => `<h2>Photos and Videos</h2>
@@ -166,6 +197,7 @@
   function renderPanel() {
     const p = $('#panel'); p.innerHTML = PANELS[tab]();
     if (tab === 'media') { bindUpload(); loadMedia(); }
+    if (tab === 'messages') loadMsgs();
   }
 
   // ---------- panel events

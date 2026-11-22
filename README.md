@@ -32,6 +32,17 @@ Admin -> **News stories** -> Add story. Each story gets its own page at `/news/<
 Build it from paragraphs, headings and photos with captions; photos added one after another show side by side.
 In text, `*italic*` and `**bold**` work. Shared links (WhatsApp, Facebook) show the cover photo, title and summary.
 
+## Contact form and Messages
+Visitors send messages straight from the Contact page (no mail app opens). Messages are stored in the R2 bucket and show in
+Admin -> **Messages** (unread count on the tab, Reply by email, Mark read, Delete). Spam is limited with a hidden trap field,
+a minimum fill-in time and one message per visitor every 30 seconds.
+
+Optional email alert when a message arrives (needs Cloudflare Email Routing on your domain with your inbox verified):
+1. Add to `wrangler.jsonc`: `"send_email": [{ "name": "MAIL", "destination_address": "you@example.com" }]`
+2. Add a plain-text variable `NOTIFY_EMAIL` = `you@example.com` (Settings -> Variables and Secrets).
+3. Optional variable `MAIL_FROM` = an address on your domain, for example `website@chorus-omnis.com`.
+The inbox works without this; the email alert is a bonus.
+
 ## Limits
 - Uploads up to 95 MB each (Cloudflare request limit is 100 MB on Free and Pro). For long videos, upload to YouTube and add the link under Social.
 - One shared admin password. Use a long one and keep it private.
