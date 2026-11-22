@@ -194,20 +194,35 @@ const clean = s => String(s ?? '').replace(/\r/g, '').trim();
 const oneLine = s => clean(s).replace(/[\n<>"]/g, ' ').slice(0, 100);
 
 // ---------- email sending (Cloudflare Email Service, binding named EMAIL)
-const fromAddress = (env, host) => ({ email: env.MAIL_FROM || ('info@' + host.replace(/^www\./, '')), name: 'Chorus Omnis' });
+const fromAddress = (env, host) => ({ email: env.MAIL_FROM || ('website@' + host.replace(/^www\./, '')), name: 'Chorus Omnis Website' });
 async function siteContactEmail(env) {
   try { const o = await env.MEDIA.get('site/content.json'); const c = o && await o.json(); const e = c && c.contact && c.contact.email; return EMAIL_RE.test(e || '') ? e : ''; } catch { return ''; }
 }
+async function alertRecipients(env, host) {
+  const own = addrList(env.NOTIFY_EMAIL);
+  if (own.length) return { list: own, source: 'NOTIFY_EMAIL setting' };
+  const c = await siteContactEmail(env);
+  if (c && !/your-domain\.com$/i.test(c)) return { list: [c], source: 'Contact email set in this admin' };
+  return { list: ['info@' + host.replace(/^www\./, '')], source: 'default (info@ your domain)' };
+}
 const addrList = v => String(v || '').split(',').map(x => x.trim()).filter(x => EMAIL_RE.test(x)).slice(0, 5);
+const errText = e => (e && (e.code ? '[' + e.code + '] ' : '') + (e.message || String(e))) || 'unknown error';
+async function recordMail(env, rec) {
+  try { await env.MEDIA.put('site/mail-status.json', JSON.stringify({ ...rec, date: new Date().toISOString() }), { httpMetadata: { contentType: 'application/json' } }); } catch {}
+}
+async function sendToList(env, host, list, build) {
+  const results = await Promise.allSettled(list.map(to => env.EMAIL.send({ to, from: fromAddress(env, host), ...build(to) })));
+  return results.map((r, i) => r.status === 'fulfilled' ? { to: list[i], ok: true } : { to: list[i], ok: false, error: errText(r.reason) });
+}
 // Alert to the choir inbox(es) when a visitor sends a message: every address in NOTIFY_EMAIL (comma separated).
 async function notifyByEmail(env, host, m) {
-  const list = addrList(env.NOTIFY_EMAIL);
-  if (!env.EMAIL || !list.length) return;
-  await Promise.allSettled(list.map(to => env.EMAIL.send({
-    to, from: fromAddress(env, host), replyTo: { email: m.email, name: m.name },
-    subject: `New website message from ${oneLine(m.name)}`,
-    text: `From: ${m.name} <${m.email}>\n\n${m.message}\n\nReply from the admin page: /admin.html (Messages tab).`,
-  })));
+  if (!env.EMAIL) return recordMail(env, { kind: 'alert', error: 'The EMAIL connection is missing. Redeploy after adding it to wrangler.jsonc.' });
+  const { list } = await alertRecipients(env, host);
+  const results = await sendToList(env, host, list, () => ({
+    replyTo: { email: m.email, name: m.name }, subject: `New website message from ${oneLine(m.name)}`,
+    text: `From: ${m.name} <${m.email}>\nDate: ${m.date}\n\n${m.message}\n\nPress Reply in your mail app to answer ${m.name} directly.`,
+  }));
+  await recordMail(env, { kind: 'alert', results, from: fromAddress(env, host).email });
 }
 
 const contactApi = (() => {
@@ -257,43 +272,6 @@ const messagesApi = (() => {
     }))).filter(Boolean);
     return json({ items });
   }
-  async function onRequestPost({ request, env }) {
-    const denied = await requireAdmin(request, env);
-    if (denied) return denied;
-    const key = keyOf(request);
-    if (!key) return json({ error: 'Bad key' }, 400);
-    if (!env.EMAIL) return json({ error: 'Email sending is not set up yet. See "Sending replies" in the README.' }, 501);
-    let b; try { b = await request.json(); } catch { return json({ error: 'Invalid request.' }, 400); }
-    const subject = oneLine(b.subject) || 'Reply from Chorus Omnis';
-    const body = clean(b.body);
-    if (!body) return json({ error: 'Please write your reply.' }, 400);
-    if (body.length > 10000) return json({ error: 'Reply is too long.' }, 400);
-    const obj = await env.MEDIA.get(key);
-    if (!obj) return json({ error: 'Not found' }, 404);
-    const m = await obj.json();
-    const host = new URL(request.url).hostname;
-    const replyTo = (await siteContactEmail(env)) || env.NOTIFY_EMAIL || '';
-    const quoted = String(m.message || '').split('\n').map(l => '> ' + l).join('\n');
-    const msg = {
-      to: { email: m.email, name: m.name }, from: fromAddress(env, host), subject,
-      text: `${body}\n\n--\nChorus Omnis\n\nOn ${m.date ? new Date(m.date).toUTCString() : 'an earlier date'}, ${m.name} wrote:\n${quoted}\n`,
-    };
-    if (replyTo) msg.replyTo = replyTo;
-    // private copy of every reply to the choir inbox(es): COPY_EMAIL (or NOTIFY_EMAIL), comma separated
-    const copies = addrList(env.COPY_EMAIL || env.NOTIFY_EMAIL).filter(x => x.toLowerCase() !== String(m.email).toLowerCase());
-    if (copies.length) msg.bcc = copies;
-    try { await env.EMAIL.send(msg); }
-    catch (e) {
-      const t = e && e.message ? String(e.message) : 'unknown error';
-      if (/not a verified address|verified destination|E_RECIPIENT_PLAN_RESTRICTED/i.test(t))
-        return json({ error: 'Cloudflare only allows sending to verified addresses until your domain is enabled for sending. In Cloudflare open Email Service, onboard chorus-omnis.com and add the DNS records it shows (see README). Details: ' + t }, 502);
-      return json({ error: 'The email could not be sent: ' + t }, 502);
-    }
-    m.read = true;
-    m.replies = [...(m.replies || []), { date: new Date().toISOString(), subject, body }].slice(-20);
-    await env.MEDIA.put(key, JSON.stringify(m), { httpMetadata: { contentType: 'application/json' } });
-    return json({ ok: true, replies: m.replies, copied: copies.length });
-  }
   async function onRequestPut({ request, env }) {
     const denied = await requireAdmin(request, env);
     if (denied) return denied;
@@ -314,7 +292,29 @@ const messagesApi = (() => {
     await env.MEDIA.delete(key);
     return json({ ok: true });
   }
-  return { onRequestGet, onRequestPost, onRequestPut, onRequestDelete };
+  return { onRequestGet, onRequestPut, onRequestDelete };
+})();
+
+const mailApi = (() => {
+  async function onRequestGet({ request, env }) {
+    const denied = await requireAdmin(request, env);
+    if (denied) return denied;
+    let last = null;
+    try { const o = await env.MEDIA.get('site/mail-status.json'); if (o) last = await o.json(); } catch {}
+    const host = new URL(request.url).hostname; const rc = await alertRecipients(env, host);
+    return json({ binding: !!env.EMAIL, notify: rc.list, source: rc.source, from: fromAddress(env, host).email, last });
+  }
+  async function onRequestPost({ request, env }) {
+    const denied = await requireAdmin(request, env);
+    if (denied) return denied;
+    if (!env.EMAIL) return json({ error: 'The EMAIL connection is missing. Make sure wrangler.jsonc contains "send_email": [{ "name": "EMAIL" }] and redeploy.' }, 501);
+    const host = new URL(request.url).hostname;
+    const { list } = await alertRecipients(env, host);
+    const results = await sendToList(env, host, list, () => ({ subject: 'Test email from your Chorus Omnis website', text: 'If you can read this, your website can send email to this address.' }));
+    await recordMail(env, { kind: 'test', results, from: fromAddress(env, host).email });
+    return json({ results });
+  }
+  return { onRequestGet, onRequestPost };
 })();
 
 // ---------- /media/*
@@ -387,6 +387,7 @@ const ROUTES = {
   '/api/media': mediaApi,
   '/api/contact': contactApi,
   '/api/messages': messagesApi,
+  '/api/mailstatus': mailApi,
 };
 
 export default {

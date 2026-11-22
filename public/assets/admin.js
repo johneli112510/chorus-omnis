@@ -125,18 +125,33 @@
       ${p.id ? `<p class="note">Page address: /news/${esc(p.id)}</p>` : ''}</div></details>`;
 
   const fmtDT = d => { const x = new Date(d); return isNaN(x) ? '' : x.toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }); };
-  const replyOpen = new Set();
   const msgCard = m => `<div class="card msg ${m.read ? '' : 'unread'}"><div class="card-head"><strong>${esc(m.name)}</strong><span class="muted">${esc(fmtDT(m.date))}</span></div>
     <div><a href="mailto:${esc(m.email)}">${esc(m.email)}</a></div><div class="msg-body">${esc(m.message)}</div>
-    ${(m.replies || []).map(r => `<div class="reply-sent"><div class="muted">You replied on ${esc(fmtDT(r.date))}</div><div class="msg-body">${esc(r.body)}</div></div>`).join('')}
-    ${replyOpen.has(m.key) ? `<div class="reply-box"><label>Subject<input data-r="subject" value="${esc('Re: your message to Chorus Omnis')}"></label>
-      <label>Your reply to ${esc(m.name)}<textarea data-r="body" rows="6" placeholder="Write your reply..."></textarea></label>
-      <div class="btns"><button type="button" class="btn sm" data-m="send" data-key="${esc(m.key)}">Send reply</button>
-      <button type="button" class="btn ghost sm" data-m="cancel" data-key="${esc(m.key)}">Cancel</button></div><p class="form-status" data-r="status" role="status"></p></div>` : ''}
-    <div class="btns">${replyOpen.has(m.key) ? '' : `<button type="button" class="btn sm" data-m="reply" data-key="${esc(m.key)}">Reply</button>`}
-    <button type="button" class="btn ghost sm" data-m="toggle" data-key="${esc(m.key)}">${m.read ? 'Mark unread' : 'Mark read'}</button>
+    <div class="btns"><button type="button" class="btn ghost sm" data-m="toggle" data-key="${esc(m.key)}">${m.read ? 'Mark unread' : 'Mark read'}</button>
     <button type="button" class="btn danger sm" data-m="del" data-key="${esc(m.key)}">Delete</button></div></div>`;
   const msgList = () => msgs.length ? msgs.map(msgCard).join('') : '<p>No messages yet.</p>';
+  const mailLine = (label, ok, text) => `<div class="mline ${ok ? 'good' : 'bad'}"><strong>${label}</strong> ${text}</div>`;
+  const resultsHtml = rs => (rs || []).map(r => `<div class="mline ${r.ok ? 'good' : 'bad'}">${r.ok ? 'Delivered to' : 'Failed for'} ${esc(r.to)}${r.ok ? '' : ': ' + esc(r.error)}</div>`).join('');
+  async function loadMail() {
+    const box = $('#mailbox'); if (!box) return;
+    try {
+      const r = await api('/api/mailstatus'); if (!r.ok) { box.textContent = await errOf(r); return; }
+      const m = await r.json(), l = m.last;
+      box.innerHTML = `<strong>Email settings</strong>
+        ${mailLine('Email connection:', m.binding, m.binding ? 'connected' : 'NOT connected. Redeploy so the EMAIL connection from wrangler.jsonc is applied.')}
+        ${mailLine('New messages are emailed to:', m.notify.length, esc(m.notify.join(', ')) + ' <span class="muted">(' + esc(m.source) + ')</span>')}
+        <div class="mline"><strong>Sending from:</strong> ${esc(m.from)}</div>
+        ${l ? `<div class="mline"><strong>Last ${esc(l.kind)}:</strong> ${esc(fmtDT(l.date))}</div>${l.error ? `<div class="mline bad">${esc(l.error)}</div>` : resultsHtml(l.results)}` : '<div class="mline">No alert has been attempted yet.</div>'}
+        <div class="btns"><button type="button" class="btn ghost sm" data-m="mailtest">Send test email</button></div><div id="mailtest" class="form-status" role="status"></div>`;
+    } catch {}
+  }
+  $('#panel').addEventListener('click', async e => {
+    if (!e.target.closest('[data-m=mailtest]')) return;
+    const out = $('#mailtest'); out.className = 'form-status'; out.textContent = 'Sending test email...';
+    const r = await api('/api/mailstatus', { method: 'POST' });
+    if (!r.ok) { out.className = 'form-status err'; out.textContent = await errOf(r); return; }
+    await loadMail();
+  });
   async function loadMsgs() {
     try {
       const r = await api('/api/messages'); if (!r.ok) return;
@@ -147,23 +162,6 @@
   $('#panel').addEventListener('click', async e => {
     const b = e.target.closest('[data-m]'); if (!b) return;
     const key = b.dataset.key, m = msgs.find(x => x.key === key); if (!m) return;
-    if (b.dataset.m === 'reply') { replyOpen.add(key); $('#mlist').innerHTML = msgList(); const t = $('#mlist .reply-box textarea'); if (t) t.focus(); return; }
-    if (b.dataset.m === 'cancel') { replyOpen.delete(key); $('#mlist').innerHTML = msgList(); return; }
-    if (b.dataset.m === 'send') {
-      const box = b.closest('.reply-box'), body = box.querySelector('[data-r=body]').value.trim(), subject = box.querySelector('[data-r=subject]').value;
-      const st = box.querySelector('[data-r=status]');
-      if (!body) { st.className = 'form-status err'; st.textContent = 'Please write your reply.'; return; }
-      b.disabled = true; st.className = 'form-status'; st.textContent = 'Sending...';
-      const r = await api('/api/messages?key=' + encodeURIComponent(key), { method: 'POST', body: JSON.stringify({ subject, body }), headers: { 'content-type': 'application/json' } });
-      if (!r.ok) {
-        b.disabled = false; st.className = 'form-status err';
-        st.innerHTML = esc(await errOf(r)) + ` <a href="mailto:${esc(m.email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}">Open in my mail app instead</a>`;
-        return;
-      }
-      const j = await r.json(); m.replies = j.replies; m.read = true; replyOpen.delete(key);
-      if (!j.copied) alert('Reply sent. Tip: add a NOTIFY_EMAIL setting in Cloudflare to also receive a copy of every reply.');
-      unread = msgs.filter(x => !x.read).length; renderTabs(); $('#mlist').innerHTML = msgList(); return;
-    }
     if (b.dataset.m === 'del') {
       if (!confirm('Delete this message permanently?')) return;
       const r = await api('/api/messages?key=' + encodeURIComponent(key), { method: 'DELETE' });
@@ -210,7 +208,7 @@
       ${C.gallery.length ? C.gallery.map((m, i) => `<div class="card">${cardHead('gallery', i, m.kind === 'video' ? 'Video' : 'Photo')}
       <div class="imgf"><div class="thumb">${m.kind === 'video' ? `<video src="${esc(safe(m.url))}#t=0.1" preload="metadata" muted style="width:100%;height:100%;object-fit:cover"></video>` : `<img src="${esc(safe(m.url))}" alt="">`}</div>
       <div style="flex:1">${text('Caption (optional)', `gallery.${i}.caption`)}</div></div></div>`).join('') : '<p>Nothing in the gallery yet. Go to Photos and Videos and tick "In gallery".</p>'}</div>`,
-    messages: () => `<h2>Messages</h2><p class="note">Messages sent from the Contact page on your website appear here.</p><div id="mlist">${msgs === null ? 'Loading...' : msgList()}</div>`,
+    messages: () => `<h2>Messages</h2><p class="note">Messages sent from the Contact page on your website appear here.</p><div id="mailbox" class="card mailbox">Checking email settings...</div><div id="mlist">${msgs === null ? 'Loading...' : msgList()}</div>`,
     contact: () => `<h2>Contact and Social</h2><div class="fields">${text('Email (messages from the contact form go here)', 'contact.email', { type: 'email' })}${text('Phone', 'contact.phone')}${text('Address', 'contact.address', { area: 1, rows: 2 })}
       <h3>Social links</h3><p class="note">Leave blank to hide a link.</p>${['facebook', 'instagram', 'youtube', 'spotify', 'tiktok'].map(k => text(k[0].toUpperCase() + k.slice(1), 'social.' + k, { ph: 'https://' })).join('')}</div>`,
     media: () => `<h2>Photos and Videos</h2>
@@ -221,7 +219,7 @@
   function renderPanel() {
     const p = $('#panel'); p.innerHTML = PANELS[tab]();
     if (tab === 'media') { bindUpload(); loadMedia(); }
-    if (tab === 'messages') loadMsgs();
+    if (tab === 'messages') { loadMsgs(); loadMail(); }
   }
 
   // ---------- panel events

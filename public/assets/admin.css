@@ -70,3 +70,5 @@ details.post>summary::before{content:"\25B8"}details.post[open]>summary::before{
 .reply-box{display:grid;gap:.7rem;background:#fff;border:1px solid var(--line);border-radius:10px;padding:1rem}
 .reply-sent{margin-left:1.2rem;border-left:3px solid var(--blue);padding-left:.8rem;display:grid;gap:.3rem}
 .form-status{margin:0;min-height:1.2em;font-size:.92rem}.form-status.err{color:var(--red)}
+
+.mailbox{background:#fff;font-size:.92rem;gap:.4rem}.mline{padding:.1rem 0;word-break:break-word}.mline.good{color:#117a2d}.mline.bad{color:var(--red)}.mline strong{color:var(--ink)}
