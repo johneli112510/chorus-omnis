@@ -272,6 +272,45 @@ const messagesApi = (() => {
     }))).filter(Boolean);
     return json({ items });
   }
+  async function onRequestPost({ request, env }) {
+    const denied = await requireAdmin(request, env);
+    if (denied) return denied;
+    const key = keyOf(request);
+    if (!key) return json({ error: 'Bad key' }, 400);
+    if (!env.EMAIL) return json({ error: 'Email sending is not set up yet. Make sure the EMAIL connection is in wrangler.jsonc and redeploy.' }, 501);
+    let b; try { b = await request.json(); } catch { return json({ error: 'Invalid request.' }, 400); }
+    const subject = oneLine(b.subject) || 'Reply from Chorus Omnis';
+    const body = clean(b.body);
+    if (!body) return json({ error: 'Please write your reply.' }, 400);
+    if (body.length > 10000) return json({ error: 'Reply is too long.' }, 400);
+    const obj = await env.MEDIA.get(key);
+    if (!obj) return json({ error: 'Not found' }, 404);
+    const m = await obj.json();
+    const host = new URL(request.url).hostname, domain = host.replace(/^www\./, '');
+    const inbox = (await alertRecipients(env, host)).list;
+    const contact = await siteContactEmail(env);
+    const replyTo = contact && !/your-domain\.com$/i.test(contact) ? contact : inbox[0];
+    // the reply is sent from the choir address; a hidden copy goes to the choir inbox(es), e.g. info@chorus-omnis.com
+    const copies = [...new Set(inbox.map(x => x.toLowerCase()))].filter(x => x !== String(m.email).toLowerCase());
+    const quoted = String(m.message || '').split('\n').map(l => '> ' + l).join('\n');
+    const msg = {
+      to: { email: m.email, name: m.name }, from: { email: env.REPLY_FROM || ('info@' + domain), name: 'Chorus Omnis' }, subject,
+      text: `${body}\n\n--\nChorus Omnis\n\nOn ${m.date ? new Date(m.date).toUTCString() : 'an earlier date'}, ${m.name} wrote:\n${quoted}\n`,
+    };
+    if (replyTo) msg.replyTo = replyTo;
+    if (copies.length) msg.bcc = copies;
+    try { await env.EMAIL.send(msg); }
+    catch (e) {
+      const t = errText(e);
+      if (/not a verified address|verified destination|E_RECIPIENT_PLAN_RESTRICTED/i.test(t))
+        return json({ error: 'Cloudflare is only allowing email to verified addresses. In Cloudflare open Email Service and finish enabling chorus-omnis.com for sending (see README). Details: ' + t }, 502);
+      return json({ error: 'The email could not be sent: ' + t }, 502);
+    }
+    m.read = true;
+    m.replies = [...(m.replies || []), { date: new Date().toISOString(), subject, body }].slice(-20);
+    await env.MEDIA.put(key, JSON.stringify(m), { httpMetadata: { contentType: 'application/json' } });
+    return json({ ok: true, replies: m.replies, copiedTo: copies });
+  }
   async function onRequestPut({ request, env }) {
     const denied = await requireAdmin(request, env);
     if (denied) return denied;
@@ -292,7 +331,7 @@ const messagesApi = (() => {
     await env.MEDIA.delete(key);
     return json({ ok: true });
   }
-  return { onRequestGet, onRequestPut, onRequestDelete };
+  return { onRequestGet, onRequestPost, onRequestPut, onRequestDelete };
 })();
 
 const mailApi = (() => {
