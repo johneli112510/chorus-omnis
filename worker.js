@@ -78,7 +78,7 @@ return { onRequestPost };
 // ---------- /api/session
 const sessionApi = (() => {
 async function onRequestGet({ request, env }) {
-  return json({ admin: await isAdmin(request, env), configured: !!env.ADMIN_PASSWORD, r2: !!env.MEDIA });
+  return json({ admin: await isAdmin(request, env), configured: !!env.ADMIN_PASSWORD, r2: !!env.MEDIA, email: !!env.EMAIL });
 }
 
 return { onRequestGet };
@@ -192,23 +192,20 @@ async function sha(text) {
 }
 const clean = s => String(s ?? '').replace(/\r/g, '').trim();
 const oneLine = s => clean(s).replace(/[\n<>"]/g, ' ').slice(0, 100);
-const b64 = s => { const b = new TextEncoder().encode(s); let t = ''; b.forEach(x => t += String.fromCharCode(x)); return btoa(t); };
 
-// Optional email alert. Works only if a send_email binding named MAIL and a NOTIFY_EMAIL variable are set (see README).
+// ---------- email sending (Cloudflare Email Service, binding named EMAIL)
+const fromAddress = (env, host) => ({ email: env.MAIL_FROM || ('info@' + host.replace(/^www\./, '')), name: 'Chorus Omnis' });
+async function siteContactEmail(env) {
+  try { const o = await env.MEDIA.get('site/content.json'); const c = o && await o.json(); const e = c && c.contact && c.contact.email; return EMAIL_RE.test(e || '') ? e : ''; } catch { return ''; }
+}
+// Optional alert to the choir inbox when a visitor sends a message (needs NOTIFY_EMAIL).
 async function notifyByEmail(env, host, m) {
-  if (!env.MAIL || !env.NOTIFY_EMAIL) return;
-  const to = env.NOTIFY_EMAIL;
-  const { EmailMessage } = await import('cloudflare:email');
-  const from = env.MAIL_FROM || `website@${host}`;
-  const subject = `New website message from ${oneLine(m.name)}`;
-  const body = `From: ${m.name} <${m.email}>\n\n${m.message}\n`;
-  const raw = [
-    `From: Chorus Omnis Website <${from}>`, `To: ${to}`, `Reply-To: ${oneLine(m.name)} <${m.email}>`,
-    `Subject: =?UTF-8?B?${b64(subject)}?=`, `Message-ID: <${crypto.randomUUID()}@${host}>`,
-    `Date: ${new Date().toUTCString()}`, 'MIME-Version: 1.0', 'Content-Type: text/plain; charset=UTF-8',
-    'Content-Transfer-Encoding: base64', '', b64(body).replace(/(.{76})/g, '$1\r\n'),
-  ].join('\r\n');
-  await env.MAIL.send(new EmailMessage(from, to, raw));
+  if (!env.EMAIL || !env.NOTIFY_EMAIL) return;
+  await env.EMAIL.send({
+    to: env.NOTIFY_EMAIL, from: fromAddress(env, host), replyTo: { email: m.email, name: m.name },
+    subject: `New website message from ${oneLine(m.name)}`,
+    text: `From: ${m.name} <${m.email}>\n\n${m.message}\n\nReply from the admin page: /admin.html (Messages tab).`,
+  });
 }
 
 const contactApi = (() => {
@@ -258,6 +255,35 @@ const messagesApi = (() => {
     }))).filter(Boolean);
     return json({ items });
   }
+  async function onRequestPost({ request, env }) {
+    const denied = await requireAdmin(request, env);
+    if (denied) return denied;
+    const key = keyOf(request);
+    if (!key) return json({ error: 'Bad key' }, 400);
+    if (!env.EMAIL) return json({ error: 'Email sending is not set up yet. See "Sending replies" in the README.' }, 501);
+    let b; try { b = await request.json(); } catch { return json({ error: 'Invalid request.' }, 400); }
+    const subject = oneLine(b.subject) || 'Reply from Chorus Omnis';
+    const body = clean(b.body);
+    if (!body) return json({ error: 'Please write your reply.' }, 400);
+    if (body.length > 10000) return json({ error: 'Reply is too long.' }, 400);
+    const obj = await env.MEDIA.get(key);
+    if (!obj) return json({ error: 'Not found' }, 404);
+    const m = await obj.json();
+    const host = new URL(request.url).hostname;
+    const replyTo = (await siteContactEmail(env)) || env.NOTIFY_EMAIL || '';
+    const quoted = String(m.message || '').split('\n').map(l => '> ' + l).join('\n');
+    const msg = {
+      to: { email: m.email, name: m.name }, from: fromAddress(env, host), subject,
+      text: `${body}\n\n--\nChorus Omnis\n\nOn ${m.date ? new Date(m.date).toUTCString() : 'an earlier date'}, ${m.name} wrote:\n${quoted}\n`,
+    };
+    if (replyTo) msg.replyTo = replyTo;
+    try { await env.EMAIL.send(msg); }
+    catch (e) { return json({ error: 'The email could not be sent: ' + (e && e.message ? e.message : 'unknown error') }, 502); }
+    m.read = true;
+    m.replies = [...(m.replies || []), { date: new Date().toISOString(), subject, body }].slice(-20);
+    await env.MEDIA.put(key, JSON.stringify(m), { httpMetadata: { contentType: 'application/json' } });
+    return json({ ok: true, replies: m.replies });
+  }
   async function onRequestPut({ request, env }) {
     const denied = await requireAdmin(request, env);
     if (denied) return denied;
@@ -278,7 +304,7 @@ const messagesApi = (() => {
     await env.MEDIA.delete(key);
     return json({ ok: true });
   }
-  return { onRequestGet, onRequestPut, onRequestDelete };
+  return { onRequestGet, onRequestPost, onRequestPut, onRequestDelete };
 })();
 
 // ---------- /media/*
