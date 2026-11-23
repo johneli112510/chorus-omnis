@@ -65,6 +65,25 @@
     if (!l.length && safe(h.image)) l.push(h.image);
     return l.map(safe);
   };
+  // YouTube links (watch, youtu.be, shorts, live, embed, playlists) become players; every other link stays a normal link
+  const yt = link => {
+    let u; try { u = new URL(String(link || '').trim()); } catch { return null; }
+    const h = u.hostname.replace(/^(www|m|music)\./, '');
+    const id11 = /^[\w-]{11}$/;
+    let id = '', list = u.searchParams.get('list') || '';
+    if (h === 'youtu.be') id = u.pathname.slice(1).split('/')[0];
+    else if (h === 'youtube.com' || h === 'youtube-nocookie.com') {
+      const m = u.pathname.match(/^\/(?:embed|shorts|live|v)\/([\w-]{11})/);
+      id = m ? m[1] : (u.pathname === '/watch' ? (u.searchParams.get('v') || '') : '');
+    } else return null;
+    if (id && !id11.test(id)) id = '';
+    if (list && !/^[\w-]+$/.test(list)) list = '';
+    if (!id && !list) return null;
+    const t = parseInt(u.searchParams.get('t') || u.searchParams.get('start') || '0', 10) || 0;
+    const q = 'autoplay=1&rel=0&modestbranding=1' + (t > 0 ? '&start=' + t : '') + (id && list ? '&list=' + list : '');
+    return { id, list, thumb: id ? `https://i.ytimg.com/vi/${id}/hqdefault.jpg` : '',
+      src: id ? `https://www.youtube-nocookie.com/embed/${id}?${q}` : `https://www.youtube-nocookie.com/embed/videoseries?list=${list}&autoplay=1&rel=0` };
+  };
   const initials = n => String(n || '?').split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
 
   function articleHtml(p) {
@@ -165,9 +184,16 @@
         ? `<div class="gallery">${gallery.map(media).join('')}</div>` : '<p>Photos and videos are coming soon.</p>'}</section>`;
     },
     recordings() {
-      return pageHead('Recordings', 'Listen to Chorus Omnis') + `<section class="wrap grid3">${(C.recordings || []).map(r => `
-        <div class="tile static rec">${safe(r.cover) ? img(r.cover, r.title, 'cover') : '<div class="cover ph">&#9835;</div>'}
-        <h2>${esc(r.title)}</h2><p>${esc(r.year)}${safe(r.link) ? ` &middot; <a href="${esc(safe(r.link))}" target="_blank" rel="noopener">Listen</a>` : ''}</p></div>`).join('')}</section>`;
+      return pageHead('Recordings', 'Listen to Chorus Omnis') + `<section class="wrap grid3 recs">${(C.recordings || []).map(r => {
+        const y = yt(r.link);
+        const thumb = safe(r.cover) || (y && y.thumb) || '';
+        const media = y
+          ? `<button type="button" class="yt" data-src="${esc(y.src)}" data-title="${esc(r.title)}" aria-label="Play ${esc(r.title)}" ${thumb ? `style="background-image:url('${esc(encodeURI(thumb))}')"` : ''}><span class="yt-btn" aria-hidden="true"></span></button>`
+          : (safe(r.cover) ? img(r.cover, r.title, 'cover') : '<div class="cover ph">&#9835;</div>');
+        const link = safe(r.link) ? (y ? ` &middot; <a href="${esc(safe(r.link))}" target="_blank" rel="noopener">Open on YouTube</a>`
+          : ` &middot; <a href="${esc(safe(r.link))}" target="_blank" rel="noopener">Listen</a>`) : '';
+        return `<div class="tile static rec">${media}<h2>${esc(r.title)}</h2><p>${esc(r.year)}${link}</p></div>`;
+      }).join('')}</section>`;
     },
     contact() {
       const c = C.contact || {};
@@ -244,6 +270,17 @@
       });
     }, { passive: true });
   }
+
+  // YouTube: load the player only when a visitor presses play
+  root.addEventListener('click', e => {
+    const b = e.target.closest('.yt'); if (!b) return;
+    const f = document.createElement('iframe');
+    f.src = b.dataset.src; f.title = b.dataset.title || 'YouTube video';
+    f.allow = 'autoplay; encrypted-media; picture-in-picture; fullscreen'; f.allowFullscreen = true;
+    f.referrerPolicy = 'strict-origin-when-cross-origin';
+    const box = document.createElement('div'); box.className = 'yt playing'; box.appendChild(f);
+    b.replaceWith(box);
+  });
 
   // Social links
   const labels = { facebook: 'Facebook', instagram: 'Instagram', youtube: 'YouTube', spotify: 'Spotify', tiktok: 'TikTok' };

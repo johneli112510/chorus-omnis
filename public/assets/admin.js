@@ -253,7 +253,7 @@
       ${text('Venue', `concerts.${i}.venue`)}${text('Ticket or details link (optional)', `concerts.${i}.link`, { ph: 'https://' })}${imgField('Photo', `concerts.${i}.image`)}</div>`).join('')}
       ${addBtn('concerts', 'Add concert')}</div>`,
     recordings: () => `<h2>Recordings</h2><div class="fields">${C.recordings.map((r, i) => `<div class="card">${cardHead('recordings', i, r.title || 'New recording')}
-      ${text('Title', `recordings.${i}.title`)}<div class="row2">${text('Year', `recordings.${i}.year`)}${text('Listen link (Spotify, YouTube...)', `recordings.${i}.link`, { ph: 'https://' })}</div>
+      ${text('Title', `recordings.${i}.title`)}<div class="row2">${text('Year', `recordings.${i}.year`)}${text('Link (YouTube plays on the site; other links open as Listen)', `recordings.${i}.link`, { ph: 'https://' })}</div>
       ${imgField('Cover', `recordings.${i}.cover`)}</div>`).join('')}${addBtn('recordings', 'Add recording')}</div>`,
     gallery: () => `<h2>Gallery</h2><p class="note">These photos and videos show on the Gallery page, in this order. Add more from the Photos and Videos tab.</p><div class="fields">
       ${C.gallery.length ? C.gallery.map((m, i) => `<div class="card">${cardHead('gallery', i, m.kind === 'video' ? 'Video' : 'Photo')}
