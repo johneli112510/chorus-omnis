@@ -15,6 +15,7 @@ def shell(fname,key,title):
         else:
             cur=' aria-current="page"' if (f==fname or (fname=='post.html' and f=='news.html')) else ''
             nav+=f'<li><a href="{f}"{cur}>{l}</a></li>'
+    ld=('\n<script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"Organization","name":"Chorus Omnis","url":"https://chorus-omnis.com/","logo":"https://chorus-omnis.com/assets/logo.png"},{"@type":"WebSite","name":"Chorus Omnis","url":"https://chorus-omnis.com/"}]}</script>' if key=="home" else '')
     full="Chorus Omnis" if key=="home" else f"{title} | Chorus Omnis"
     og='<!--META-->' if key=="post" else f'<meta property="og:title" content="{full}"><meta property="og:image" content="/assets/logo.png"><meta property="og:type" content="website">'
     return f'''<!doctype html>
@@ -23,7 +24,10 @@ def shell(fname,key,title):
 <title>{full}</title>
 <meta name="description" content="Chorus Omnis, a choir singing together for everyone.">
 {og}
-<link rel="icon" href="/assets/favicon.png">
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="icon" type="image/png" sizes="48x48" href="/assets/favicon-48.png">
+<link rel="icon" type="image/png" sizes="96x96" href="/assets/favicon-96.png">
+<link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">{ld}
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,400&family=Figtree:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/assets/style.css">
